@@ -31,18 +31,20 @@ class ModelEdgeShader(ShaderBase):
                                           [1., 1., 1.]], device=zbuf.device) # (3x3)
         laplace_2d_filter = laplace_2d_filter.unsqueeze(0).unsqueeze(0) # (1x1x3x3) # TODO: Batch 고려 필요
 
-        gaussian_filter = torch.tensor([[1., 1., 1., 1., 1.],
-                                        [1., 3., 3., 3., 1.],
-                                        [1., 3., 6., 3., 1.],
-                                        [1., 3., 3., 3., 1.],
-                                        [1., 1., 1., 1., 1.]], device=zbuf.device) / 46
+        gaussian_filter = torch.tensor([[1.,  4.,  7.,  4., 1.],
+                                        [4., 16., 26., 16., 4.],
+                                        [7., 26., 41., 26., 7.],
+                                        [4., 16., 26., 16., 4.],
+                                        [1.,  4.,  7.,  4., 1.]], device=zbuf.device) / 273
         gaussian_filter = gaussian_filter.unsqueeze(0).unsqueeze(0)
 
         edge_zbuf = F.conv2d(zbuf, laplace_2d_filter, padding='same')
         edge_img = (edge_zbuf >= self.edge_threshold).float()
 
         blurred_img = F.conv2d(edge_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(edge_img, gaussian_filter, padding='same')
         blurred_img = blurred_img + edge_img
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
         blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
         blurred_img = blurred_img + edge_img
 
