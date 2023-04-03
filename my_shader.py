@@ -51,3 +51,28 @@ class ModelEdgeShader(ShaderBase):
         image = blurred_img.permute(0, 2, 3, 1) # (bxWxHxc)
 
         return image
+
+class SimpleEdgeShader(ShaderBase):
+    def forward(self, fragments, meshes, **kwargs):
+        cameras = super()._get_cameras(**kwargs)
+
+        zfar = kwargs.get("zfar", getattr(cameras, "zfar", 100.0))
+        mask = fragments.pix_to_face[..., 0:1] < 0
+
+        zbuf = fragments.zbuf[..., 0:1].clone()
+        zbuf[mask] = 4 # (b x W x H x c)
+
+        # Depth 값으로부터 2D Laplace 필터로 Edge 계산
+        zbuf = zbuf.permute(0,3,1,2) # (bxcxWxH)
+
+        laplace_2d_filter = torch.tensor([[1., 1., 1.],
+                                          [1.,-8., 1.],
+                                          [1., 1., 1.]], device=zbuf.device) # (3x3)
+        laplace_2d_filter = laplace_2d_filter.unsqueeze(0).unsqueeze(0) # (1x1x3x3) # TODO: Batch 고려 필요
+
+        edge_zbuf = F.conv2d(zbuf, laplace_2d_filter, padding='same')
+        edge_img = (edge_zbuf >= 0.02).float()
+
+        image = edge_img.permute(0, 2, 3, 1) # (bxWxHxc)
+
+        return image

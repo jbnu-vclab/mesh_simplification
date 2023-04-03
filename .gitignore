@@ -1,4 +1,5 @@
 pytorch3d
-final_model.obj
+final_model_wo_edge_loss.obj
 *.png
 .idea
+__pychache__/
