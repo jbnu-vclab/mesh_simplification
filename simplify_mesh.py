@@ -26,6 +26,8 @@ import os
 
 from utils.plot_image_grid import image_grid
 
+import wandb
+
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
@@ -105,10 +107,6 @@ def render_imgs(renderer, meshes, cameras, lights, num_views):
 
     return images
 
-def plot_images(images, rgb):
-    image_grid(images.cpu().numpy(), rows=4, cols=5, rgb=rgb)
-    plt.show()
-
 # Plot losses as a function of optimization iteration
 def plot_losses(losses):
     fig = plt.figure(figsize=(13, 5))
@@ -126,68 +124,70 @@ def update_mesh_shape_prior_losses(mesh, loss):
     loss["normal"] = mesh_normal_consistency(mesh)
     loss["laplacian"] = mesh_laplacian_smoothing(mesh, method="uniform")
 
-def prepare_GT(obj_path, num_views):
+
+def prepare_GT(args, obj_path, num_views):
     mesh = load_mesh(obj_path, normalize=True)
     meshes = mesh.extend(num_views)
 
-    cameras = define_multi_view_cam(num_views=num_views, distance=2.7)
+    cameras = define_multi_view_cam(num_views=num_views, distance=args['cam_distance'])
 
     lights = define_light([0.,0.,-3.])
 
-    softphong_renderer = define_renderer(image_size=512,
+    softphong_renderer = define_renderer(image_size=args['image_resolution'],
                                            blur_radius=0.0,
                                            faces_per_pixel=1,
-                               shader_str="SoftPhong",
+                                            shader_str="SoftPhong",
                                          cameras=cameras,
                                          lights=lights)
 
     softphong_imgs = render_imgs(softphong_renderer, meshes, cameras, lights, num_views)
-    # plot_images(softphong_imgs, rgb=True)
+    fig_gt_phong = image_grid(softphong_imgs.cpu().numpy(), rows=2, cols=5, rgb=True)
 
-    sigma = 1e-4
-    blur_rad = np.log(1. / 1e-4 - 1.) * sigma
-
-    silhouette_renderer = define_renderer(512, blur_rad, 50, "SoftSilhouette", cameras, lights)
+    silhouette_renderer = define_renderer(args['image_resolution'], args['blur_radius'], 50, "SoftSilhouette", cameras, lights)
     target_silhouette_imgs = render_imgs(silhouette_renderer, meshes, cameras, lights, num_views)
-    # plot_images(target_silhouette_imgs, rgb=False)
+    fig_gt_sil = image_grid(softphong_imgs.cpu().numpy(), rows=2, cols=5, rgb=False)
 
-    edge_renderer = define_renderer(512, 0.0, 1, "SimpleEdge", cameras, lights)
+    edge_renderer = define_renderer(args['image_resolution'], 0.0, 1, "SimpleEdge", cameras, lights)
     target_edge_imgs = render_imgs(edge_renderer, meshes, cameras, lights, num_views)
-    plot_images(target_edge_imgs, rgb=True)
+    fig_gt_edge = image_grid(softphong_imgs.cpu().numpy(), rows=2, cols=5, rgb=True)
+
+    wandb.log({
+        "GT Model Img": fig_gt_phong,
+        "GT Silhouette Img": fig_gt_sil,
+        "GT Edge Img": fig_gt_edge
+    })
 
     return cameras, lights, target_silhouette_imgs, target_edge_imgs
 
-def train_test():
+def train_test(args):
     DATA_DIR = "./data"
-    obj_path = os.path.join(DATA_DIR, "fandisk.obj")
-    num_views = 10
+    obj_path = os.path.join(DATA_DIR, f"{args['objfile']}.obj")
+    num_views = args['num_views']
 
-    cameras, lights, target_silhouette_imgs, target_edge_imgs = prepare_GT(obj_path, num_views)
+    cameras, lights, target_silhouette_imgs, target_edge_imgs = prepare_GT(args,obj_path, num_views)
 
-    src_mesh = ico_sphere(4, device)
+    src_mesh = ico_sphere(args['init_sphere_level'], device)
     verts_shape = src_mesh.verts_packed().shape
     deform_verts = torch.full(verts_shape, 0.0, device=device, requires_grad=True)
 
-    sigma = 1e-4
-    blur_rad = np.log(1. / 1e-4 - 1.) * sigma
+    silhouette_renderer = define_renderer(args['image_resolution'], args['blur_radius'], 50, "SoftSilhouette", cameras, lights)
+    edge_renderer = define_renderer(args['image_resolution'], 0.0, 1, "SimpleEdge", cameras, lights)
 
-    silhouette_renderer = define_renderer(512, blur_rad, 50, "SoftSilhouette", cameras, lights)
-    edge_renderer = define_renderer(512, 0.0, 1, "SimpleEdge", cameras, lights)
 
-    num_views_per_iteration = 4
-    iter = 500
-    plot_period = 250
+
+    num_views_per_iteration = args['num_views_per_iteration']
+    iter = args['iter']
 
     losses = {
-        "silhouette": {"weight": 0.9, "values": []},
-        "edge": {"weight": 0.8, "values": []},
-        "normal": {"weight": 0.01, "values": []},
-        "laplacian": {"weight": 1.0, "values": []},
-        "model_edge": {"weight": 1.0, "values": []},
+        "silhouette": {"weight": args['loss_silhouette_weight'], "values": []},
+        "edge": {"weight": args['loss_edge_weight'], "values": []},
+        "normal": {"weight": args['loss_normal_weight'], "values": []},
+        "laplacian": {"weight": args['loss_laplacian_weight'], "values": []},
+        "model_edge": {"weight": args['loss_model_edge_weight'], "values": []},
     }
 
     # The optimizer
-    optimizer = torch.optim.SGD([deform_verts], lr=1.0, momentum=0.9)
+    optimizer = torch.optim.SGD([deform_verts], lr=args['lr'], momentum=args['momentum'])
 
     loop = tqdm(range(iter))
     for i in loop:
@@ -221,28 +221,38 @@ def train_test():
             sum_loss += l * losses[k]["weight"]
             losses[k]["values"].append(float(l.detach().cpu()))
 
+            wandb.log({
+                k: l
+            })
+
         # Print the losses
         loop.set_description("total_loss = %.6f" % sum_loss)
 
-        # Plot mesh
-        if i % plot_period == 0:
-            with torch.no_grad():
-                predicted_mesh = new_src_mesh.detach().extend(num_views)
-                predicted_silhouette = silhouette_renderer(predicted_mesh, cameras=cameras, lights=lights)
-                plot_images(predicted_silhouette, rgb=False)
-
-                predicted_edge = edge_renderer(predicted_mesh, cameras=cameras, lights=lights)
-                plot_images(predicted_edge, rgb=True)
-
-        # Optimization step
+        # Optimization step음
         sum_loss.backward()
         optimizer.step()
+
+    # Plot mesh
+    with torch.no_grad():
+        predicted_mesh = new_src_mesh.detach().extend(num_views)
+        predicted_silhouette = silhouette_renderer(predicted_mesh, cameras=cameras, lights=lights)
+        fig_test_sil = image_grid(predicted_silhouette.cpu().numpy(), rows=2, cols=5, rgb=True)
+
+        predicted_edge = edge_renderer(predicted_mesh, cameras=cameras, lights=lights)
+        fig_test_edge = image_grid(predicted_edge.cpu().numpy(), rows=2, cols=5, rgb=True)
+
+        # TODO: plt 저장 잘 안되는 경우가 있음
+        wandb.log({
+            "Test Silhouette Img": fig_test_sil,
+            "Test Edge Img": fig_test_edge
+        })
 
 
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
 
-    final_obj = os.path.join('./', 'final_model_w_edge_loss_512.obj')
+    final_obj = os.path.join('./', 'final_model_w_edge_loss.obj')
     save_obj(final_obj, final_verts, final_faces)
+    # TODO: WandB File Loggning
 
     plot_losses(losses)
 
@@ -256,5 +266,29 @@ def train_test():
     # 6) 타겟 이미지 생성시에는 skeleton화를 하는 것은 어떨지?
 
 if __name__ == "__main__":
-    train_test()
+    wandb.init(entity='jbnu-vclab', project="mesh_simplification", reinit=True)
+    # wandb.run.name = 'your-run-name'
+    # wandb.run.save()
+
+    args = {}
+    args['objfile'] = 'fandisk'
+    args['num_views'] = 10
+    args['cam_distance'] = 2.7
+    args['sigma'] = 1e-4
+    args['blur_radius'] = np.log(1. / 1e-4 - 1.) * args['sigma']
+    args['image_resolution'] = 512
+    args['init_sphere_level'] = 4
+    args['num_views_per_iteration'] = 4
+    args['iter'] = 500
+    args['loss_silhouette_weight'] = 0.9
+    args['loss_edge_weight'] = 0.8
+    args['loss_normal_weight'] = 0.01
+    args['loss_laplacian_weight'] = 1.0
+    args['loss_model_edge_weight'] = 1.0
+    args['lr'] = 1.0
+    args['momentum'] = 0.9
+
+    wandb.config.update(args)
+
+    train_test(args)
 

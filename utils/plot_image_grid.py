@@ -51,3 +51,5 @@ def image_grid(
             ax.imshow(im[..., 3])
         if not show_axes:
             ax.set_axis_off()
+
+    return fig
