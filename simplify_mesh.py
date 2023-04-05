@@ -1,6 +1,7 @@
 import os
 import torch
 import matplotlib.pyplot as plt
+import torchvision.utils
 
 from pytorch3d.utils import ico_sphere
 import numpy as np
@@ -56,6 +57,21 @@ def load_mesh(obj_path, normalize=True):
         scale = max((verts - center).abs().max(0)[0])
         mesh.offset_verts_(-center)
         mesh.scale_verts_((1.0 / float(scale)))
+
+    return mesh
+
+def convert_textureless_mesh_into_textue_mesh(mesh):
+    verts = mesh.verts_packed()
+    faces = mesh.faces_packed()
+    verts_rgb = torch.ones_like(verts)[None]  # (1, V, 3)
+    textures = TexturesVertex(verts_features=verts_rgb.to(device))
+
+    # Create a Meshes object for the teapot. Here we have only one mesh in the batch.
+    mesh = Meshes(
+        verts=[verts.to(device)],
+        faces=[faces.to(device)],
+        textures=textures
+    )
 
     return mesh
 
@@ -124,6 +140,13 @@ def update_mesh_shape_prior_losses(mesh, loss):
     loss["normal"] = mesh_normal_consistency(mesh)
     loss["laplacian"] = mesh_laplacian_smoothing(mesh, method="uniform")
 
+def convert_PIL_grid_img(batch_imgs, target_channel, nrow):
+    grid_tensor = torchvision.utils.make_grid(batch_imgs.permute(0,3,1,2), nrow=nrow)
+    grid_tensor = grid_tensor.permute(1,2,0)
+    if not target_channel:
+        return wandb.Image((grid_tensor * 255).cpu().numpy().astype(np.uint8))
+    else:
+        return wandb.Image((grid_tensor[...,target_channel] * 255).cpu().numpy().astype(np.uint8))
 
 def prepare_GT(args, obj_path, num_views):
     mesh = load_mesh(obj_path, normalize=True)
@@ -141,20 +164,20 @@ def prepare_GT(args, obj_path, num_views):
                                          lights=lights)
 
     softphong_imgs = render_imgs(softphong_renderer, meshes, cameras, lights, num_views)
-    fig_gt_phong = image_grid(softphong_imgs.cpu().numpy(), rows=2, cols=5, rgb=True)
+    softphong_imgs_grid = convert_PIL_grid_img(softphong_imgs, target_channel=None, nrow=5)
 
     silhouette_renderer = define_renderer(args['image_resolution'], args['blur_radius'], 50, "SoftSilhouette", cameras, lights)
     target_silhouette_imgs = render_imgs(silhouette_renderer, meshes, cameras, lights, num_views)
-    fig_gt_sil = image_grid(softphong_imgs.cpu().numpy(), rows=2, cols=5, rgb=False)
+    silhouette_imgs_grid = convert_PIL_grid_img(target_silhouette_imgs, target_channel=3, nrow=5)
 
     edge_renderer = define_renderer(args['image_resolution'], 0.0, 1, "SimpleEdge", cameras, lights)
     target_edge_imgs = render_imgs(edge_renderer, meshes, cameras, lights, num_views)
-    fig_gt_edge = image_grid(softphong_imgs.cpu().numpy(), rows=2, cols=5, rgb=True)
+    edge_imgs_grid = convert_PIL_grid_img(target_edge_imgs, target_channel=0, nrow=5)
 
     wandb.log({
-        "GT Model Img": fig_gt_phong,
-        "GT Silhouette Img": fig_gt_sil,
-        "GT Edge Img": fig_gt_edge
+        "GT Model Img": softphong_imgs_grid,
+        "GT Silhouette Img": silhouette_imgs_grid,
+        "GT Edge Img": edge_imgs_grid
     })
 
     return cameras, lights, target_silhouette_imgs, target_edge_imgs
@@ -172,8 +195,12 @@ def train_test(args):
 
     silhouette_renderer = define_renderer(args['image_resolution'], args['blur_radius'], 50, "SoftSilhouette", cameras, lights)
     edge_renderer = define_renderer(args['image_resolution'], 0.0, 1, "SimpleEdge", cameras, lights)
-
-
+    softphong_renderer = define_renderer(image_size=args['image_resolution'],
+                                         blur_radius=0.0,
+                                         faces_per_pixel=1,
+                                         shader_str="SoftPhong",
+                                         cameras=cameras,
+                                         lights=lights)
 
     num_views_per_iteration = args['num_views_per_iteration']
     iter = args['iter']
@@ -228,33 +255,40 @@ def train_test(args):
         # Print the losses
         loop.set_description("total_loss = %.6f" % sum_loss)
 
-        # Optimization step음
+        # Optimization step
         sum_loss.backward()
         optimizer.step()
 
     # Plot mesh
     with torch.no_grad():
         predicted_mesh = new_src_mesh.detach().extend(num_views)
+        predicted_mesh = convert_textureless_mesh_into_textue_mesh(predicted_mesh)
+        predicted_mesh = predicted_mesh.extend(args["num_views"])
+
         predicted_silhouette = silhouette_renderer(predicted_mesh, cameras=cameras, lights=lights)
-        fig_test_sil = image_grid(predicted_silhouette.cpu().numpy(), rows=2, cols=5, rgb=True)
+        silhouette_imgs_grid = convert_PIL_grid_img(predicted_silhouette, target_channel=3, nrow=5)
 
         predicted_edge = edge_renderer(predicted_mesh, cameras=cameras, lights=lights)
-        fig_test_edge = image_grid(predicted_edge.cpu().numpy(), rows=2, cols=5, rgb=True)
+        edge_imgs_grid = convert_PIL_grid_img(predicted_edge, target_channel=0, nrow=5)
 
-        # TODO: plt 저장 잘 안되는 경우가 있음
+        predicted_phong = softphong_renderer(predicted_mesh, cameras=cameras, lights=lights)
+        phong_imgs_grid = convert_PIL_grid_img(predicted_phong, target_channel=None, nrow=5)
+
+
         wandb.log({
-            "Test Silhouette Img": fig_test_sil,
-            "Test Edge Img": fig_test_edge
+            "Test Silhouette Img": silhouette_imgs_grid,
+            "Test Edge Img": edge_imgs_grid,
+            "Test Phong Img": phong_imgs_grid
         })
 
 
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
 
-    final_obj = os.path.join('./', 'final_model_w_edge_loss.obj')
+    final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
     save_obj(final_obj, final_verts, final_faces)
-    # TODO: WandB File Loggning
 
-    plot_losses(losses)
+    wandb.save(os.path.join(wandb.run.dir, "final_model*"))
+    # TODO: WandB File Loggning
 
     # TODO
     # 1) 처음에 실루엣 기반으로 전체 모양을 잡고, edge로 파인 튜닝을 하는 개념으로 접근?
@@ -266,7 +300,7 @@ def train_test(args):
     # 6) 타겟 이미지 생성시에는 skeleton화를 하는 것은 어떨지?
 
 if __name__ == "__main__":
-    wandb.init(entity='jbnu-vclab', project="mesh_simplification", reinit=True)
+    wandb.init(entity='jbnu-vclab', project="mesh_simplification", name="KHK-Fandisk", reinit=True)
     # wandb.run.name = 'your-run-name'
     # wandb.run.save()
 
@@ -277,13 +311,13 @@ if __name__ == "__main__":
     args['sigma'] = 1e-4
     args['blur_radius'] = np.log(1. / 1e-4 - 1.) * args['sigma']
     args['image_resolution'] = 512
-    args['init_sphere_level'] = 4
+    args['init_sphere_level'] = 3
     args['num_views_per_iteration'] = 4
     args['iter'] = 500
     args['loss_silhouette_weight'] = 0.9
     args['loss_edge_weight'] = 0.8
     args['loss_normal_weight'] = 0.01
-    args['loss_laplacian_weight'] = 1.0
+    args['loss_laplacian_weight'] = 0.0
     args['loss_model_edge_weight'] = 1.0
     args['lr'] = 1.0
     args['momentum'] = 0.9
