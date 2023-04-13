@@ -1,17 +1,14 @@
-import os
 import torch
 import matplotlib.pyplot as plt
 import torchvision.utils
 
-from pytorch3d.utils import ico_sphere
 import numpy as np
-from tqdm import tqdm, trange
+from tqdm import tqdm
 
 # Util function for loading meshes
-from pytorch3d.io import load_objs_as_meshes, save_obj, load_obj
+from pytorch3d.io import save_obj, load_obj
 
 from pytorch3d.loss import (
-    chamfer_distance,
     mesh_edge_loss,
     mesh_laplacian_smoothing,
     mesh_normal_consistency,
@@ -21,13 +18,13 @@ from pytorch3d.loss import (
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer import *
 
-from my_shader import ModelEdgeShader, SimpleEdgeShader
+from shader.edge_shader import GaussianEdgeShader, SimpleEdgeShader
 
 import os
 
-from utils.plot_image_grid import image_grid
-
 import wandb
+
+from loss.mesh_chamfer_distance import mesh_chamfer_distance
 
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
@@ -89,7 +86,7 @@ def define_light(pointlight_location):
     return lights
 
 def define_renderer(image_size, blur_radius, faces_per_pixel,
-                    shader_str, cameras, lights):
+                    shader_str, cameras, lights, plot=False):
     raster_settings = RasterizationSettings(
         image_size=image_size,
         blur_radius=blur_radius,
@@ -101,8 +98,8 @@ def define_renderer(image_size, blur_radius, faces_per_pixel,
         shader = SoftPhongShader(device=device, cameras=cameras, lights=lights)
     if shader_str.lower() == "softsilhouette":
         shader = SoftSilhouetteShader()
-    if shader_str.lower() == "edge":
-        shader = ModelEdgeShader(device=device)
+    if shader_str.lower() == "gaussianedge":
+        shader = GaussianEdgeShader(device=device, edge_threshold=args['gaussian_edge_thr'])
     if shader_str.lower() == "simpleedge":
         shader = SimpleEdgeShader(device=device)
     if not shader:
@@ -134,6 +131,7 @@ def plot_losses(losses):
     ax.set_ylabel("Loss", fontsize="16")
     ax.set_title("Loss vs iterations", fontsize="16")
     plt.show()
+    # return predicted_images
 
 def update_mesh_shape_prior_losses(mesh, loss):
     loss["edge"] = mesh_edge_loss(mesh)
@@ -149,17 +147,17 @@ def convert_PIL_grid_img(batch_imgs, target_channel, nrow):
         return wandb.Image((grid_tensor[...,target_channel] * 255).cpu().numpy().astype(np.uint8))
 
 def prepare_GT(args, obj_path, num_views):
-    mesh = load_mesh(obj_path, normalize=True)
-    meshes = mesh.extend(num_views)
+    target_mesh = load_mesh(obj_path, normalize=True)
+    meshes = target_mesh.extend(num_views)
 
     cameras = define_multi_view_cam(num_views=num_views, distance=args['cam_distance'])
 
     lights = define_light([0.,0.,-3.])
 
     softphong_renderer = define_renderer(image_size=args['image_resolution'],
-                                           blur_radius=0.0,
-                                           faces_per_pixel=1,
-                                            shader_str="SoftPhong",
+                                         blur_radius=0.0,
+                                         faces_per_pixel=1,
+                                         shader_str="SoftPhong",
                                          cameras=cameras,
                                          lights=lights)
 
@@ -170,9 +168,10 @@ def prepare_GT(args, obj_path, num_views):
     target_silhouette_imgs = render_imgs(silhouette_renderer, meshes, cameras, lights, num_views)
     silhouette_imgs_grid = convert_PIL_grid_img(target_silhouette_imgs, target_channel=3, nrow=5)
 
-    edge_renderer = define_renderer(args['image_resolution'], 0.0, 1, "SimpleEdge", cameras, lights)
+    edge_renderer = define_renderer(args['image_resolution'], 0.0, 1, args['model_edge_type'], cameras, lights)
     target_edge_imgs = render_imgs(edge_renderer, meshes, cameras, lights, num_views)
     edge_imgs_grid = convert_PIL_grid_img(target_edge_imgs, target_channel=0, nrow=5)
+
 
     wandb.log({
         "GT Model Img": softphong_imgs_grid,
@@ -180,21 +179,38 @@ def prepare_GT(args, obj_path, num_views):
         "GT Edge Img": edge_imgs_grid
     })
 
-    return cameras, lights, target_silhouette_imgs, target_edge_imgs
+    return cameras, lights, target_mesh, target_silhouette_imgs, target_edge_imgs
 
 def train_test(args):
-    DATA_DIR = "./data"
+    DATA_DIR = "data"
     obj_path = os.path.join(DATA_DIR, f"{args['objfile']}.obj")
     num_views = args['num_views']
 
-    cameras, lights, target_silhouette_imgs, target_edge_imgs = prepare_GT(args,obj_path, num_views)
+    cameras, lights, target_mesh, target_silhouette_imgs, target_edge_imgs = prepare_GT(args,obj_path, num_views)
 
-    src_mesh = ico_sphere(args['init_sphere_level'], device)
+    # src_mesh = ico_sphere(int(args['init_sphere_level']), device)
+    #TODO: ico_sphere가 아닌 대략적인 형상이 있는걸 source로 시작
+    DATA_DIR = "data"
+    src_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}_simplified.obj")
+    src_mesh = load_mesh(src_obj_path, normalize=True)
+
     verts_shape = src_mesh.verts_packed().shape
     deform_verts = torch.full(verts_shape, 0.0, device=device, requires_grad=True)
 
-    silhouette_renderer = define_renderer(args['image_resolution'], args['blur_radius'], 50, "SoftSilhouette", cameras, lights)
-    edge_renderer = define_renderer(args['image_resolution'], 0.0, 1, "SimpleEdge", cameras, lights)
+    silhouette_renderer = define_renderer(image_size=args['image_resolution'],
+                                          blur_radius=args['blur_radius'],
+                                          faces_per_pixel=50,
+                                          shader_str="SoftSilhouette",
+                                          cameras=cameras,
+                                          lights=lights)
+
+    edge_renderer = define_renderer(image_size=args['image_resolution'],
+                                    blur_radius=0.0,
+                                    faces_per_pixel=1,
+                                    shader_str=args['model_edge_type'],
+                                    cameras=cameras,
+                                    lights=lights)
+
     softphong_renderer = define_renderer(image_size=args['image_resolution'],
                                          blur_radius=0.0,
                                          faces_per_pixel=1,
@@ -211,7 +227,9 @@ def train_test(args):
         "normal": {"weight": args['loss_normal_weight'], "values": []},
         "laplacian": {"weight": args['loss_laplacian_weight'], "values": []},
         "model_edge": {"weight": args['loss_model_edge_weight'], "values": []},
+        "chamfer_distance": {"weight": args['loss_chamfer_distance_weight'], "values": []},
     }
+    #TODO: Depth loss 추가
 
     # The optimizer
     optimizer = torch.optim.SGD([deform_verts], lr=args['lr'], momentum=args['momentum'])
@@ -228,19 +246,28 @@ def train_test(args):
         loss = {k: torch.tensor(0.0, device=device) for k in losses}
         update_mesh_shape_prior_losses(new_src_mesh, loss)
 
-        for j in np.random.permutation(num_views).tolist()[:num_views_per_iteration]:
-            images_predicted = silhouette_renderer(new_src_mesh, cameras=cameras[j], lights=lights)
-            predicted_silhouette = images_predicted[..., 3]
-            target_silhouette = target_silhouette_imgs[j, ..., 3]
-            loss_silhouette = ((predicted_silhouette - target_silhouette) ** 2).mean()
-            loss["silhouette"] += loss_silhouette / num_views_per_iteration
+        if args['use_silhouette']:
+            for j in np.random.permutation(num_views).tolist()[:num_views_per_iteration]:
+                images_predicted = silhouette_renderer(new_src_mesh, cameras=cameras[j], lights=lights)
+                predicted_silhouette = images_predicted[..., 3]
+                target_silhouette = target_silhouette_imgs[j, ..., 3]
+                loss_silhouette = ((predicted_silhouette - target_silhouette) ** 2).mean()
+                loss["silhouette"] += loss_silhouette / num_views_per_iteration
 
         for j in np.random.permutation(num_views).tolist()[:num_views_per_iteration]:
             images_predicted = edge_renderer(new_src_mesh, cameras=cameras[j], lights=lights)
             predicted_model_edge = images_predicted[..., 0]
             target_edge = target_edge_imgs[j, ..., 0]
-            loss_model_edge = ((predicted_model_edge - target_edge) ** 2).mean()
-            loss["model_edge"] += loss_model_edge / num_views_per_iteration
+            # Cross-Entropy
+            # cee_loss = torch.nn.CrossEntropyLoss()
+            # model_edge_cee = cee_loss(predicted_model_edge, target_edge)
+            model_edge_mse = ((predicted_model_edge - target_edge) ** 2).mean()
+
+            loss_gaussian_edge = model_edge_mse
+
+            loss["model_edge"] += loss_gaussian_edge / num_views_per_iteration
+
+        loss["chamfer_distance"] = mesh_chamfer_distance(new_src_mesh, target_mesh, args['chamfer_distance_num_samples'])
 
         # Weighted sum of the losses
         sum_loss = torch.tensor(0.0, device=device)
@@ -252,6 +279,10 @@ def train_test(args):
                 k: l
             })
 
+        wandb.log({
+            'total_loss': sum_loss,
+        })
+
         # Print the losses
         loop.set_description("total_loss = %.6f" % sum_loss)
 
@@ -259,9 +290,11 @@ def train_test(args):
         sum_loss.backward()
         optimizer.step()
 
+
     # Plot mesh
     with torch.no_grad():
         predicted_mesh = new_src_mesh.detach().extend(num_views)
+
         predicted_mesh = convert_textureless_mesh_into_textue_mesh(predicted_mesh)
         predicted_mesh = predicted_mesh.extend(args["num_views"])
 
@@ -274,21 +307,24 @@ def train_test(args):
         predicted_phong = softphong_renderer(predicted_mesh, cameras=cameras, lights=lights)
         phong_imgs_grid = convert_PIL_grid_img(predicted_phong, target_channel=None, nrow=5)
 
-
         wandb.log({
             "Test Silhouette Img": silhouette_imgs_grid,
             "Test Edge Img": edge_imgs_grid,
-            "Test Phong Img": phong_imgs_grid
+            "Test Phong Img": phong_imgs_grid,
         })
-
 
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
 
     final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
     save_obj(final_obj, final_verts, final_faces)
 
-    wandb.save(os.path.join(wandb.run.dir, "final_model*"))
     # TODO: WandB File Loggning
+    wandb.log({
+        "Final Model": wandb.Object3D(open(final_obj))
+    })
+
+    wandb.save(final_obj)
+
 
     # TODO
     # 1) 처음에 실루엣 기반으로 전체 모양을 잡고, edge로 파인 튜닝을 하는 개념으로 접근?
@@ -300,7 +336,7 @@ def train_test(args):
     # 6) 타겟 이미지 생성시에는 skeleton화를 하는 것은 어떨지?
 
 if __name__ == "__main__":
-    wandb.init(entity='jbnu-vclab', project="mesh_simplification", name="KHK-Fandisk", reinit=True)
+    wandb.init(entity='jbnu-vclab', project="mesh_simplification", reinit=True)
     # wandb.run.name = 'your-run-name'
     # wandb.run.save()
 
@@ -314,15 +350,22 @@ if __name__ == "__main__":
     args['init_sphere_level'] = 3
     args['num_views_per_iteration'] = 4
     args['iter'] = 500
-    args['loss_silhouette_weight'] = 0.9
+    args['use_silhouette'] = True
+    args['loss_silhouette_weight'] = 1.0
     args['loss_edge_weight'] = 0.8
     args['loss_normal_weight'] = 0.01
     args['loss_laplacian_weight'] = 0.0
     args['loss_model_edge_weight'] = 1.0
+    args['loss_chamfer_distance_weight'] = 1.0
+    args['chamfer_distance_num_samples'] = 10000
+    args['model_edge_type'] = 'GaussianEdge' # 'GaussianEdge' or 'SimpleEdge'
+    args['gaussian_edge_thr'] = 0.012
     args['lr'] = 1.0
     args['momentum'] = 0.9
 
     wandb.config.update(args)
 
     train_test(args)
+
+    wandb.finish()
 

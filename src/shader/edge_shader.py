@@ -1,13 +1,8 @@
 import torch
 import torch.nn.functional as F
-import pytorch3d
-from pytorch3d import renderer
-from pytorch3d.renderer.mesh.shader import ShaderBase, phong_shading
-import torch
-from pytorch3d.renderer import SoftPhongShader
 from pytorch3d.renderer.mesh.shader import ShaderBase
 
-class ModelEdgeShader(ShaderBase):
+class GaussianEdgeShader(ShaderBase):
     def __init__(self, device="cpu", edge_threshold=0.0002):
         super().__init__()
         self.device = device
@@ -42,11 +37,25 @@ class ModelEdgeShader(ShaderBase):
         edge_img = (edge_zbuf >= self.edge_threshold).float()
 
         blurred_img = F.conv2d(edge_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(edge_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
         blurred_img = blurred_img + edge_img
         blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
         blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
         blurred_img = blurred_img + edge_img
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = blurred_img + edge_img
+
+        # blurred_img = F.conv2d(edge_img, gaussian_filter, padding='same')
+        # blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        # blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        # blurred_img = blurred_img + edge_img
 
         image = blurred_img.permute(0, 2, 3, 1) # (bxWxHxc)
 

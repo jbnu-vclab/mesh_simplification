@@ -2,5 +2,6 @@ pytorch3d
 final_model_wo_edge_loss.obj
 *.png
 .idea
-__pycache__/
+__pycache__
 wandb
+#utils/__pychache__
