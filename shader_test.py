@@ -77,7 +77,7 @@ renderer_phong = MeshRenderer(
 # plt.axis("off")
 # plt.show()
 
-from shader.edge_shader import GaussianEdgeShader
+from src.shader.edge_shader import GaussianEdgeShader
 
 raster_settings_edge = RasterizationSettings(
     image_size=512,
