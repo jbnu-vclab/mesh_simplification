@@ -35,10 +35,12 @@ cameras = define_multi_view_cam(device=device,
 lights = define_light(device=device,
                       pointlight_location=[0.,0.,-3.])
 
+
+blur_radius = np.log(1. / 1e-4 - 1.) * 1e-6
 renderer = define_renderer(device=device,
                         image_size=1024,
-                        blur_radius=0.0,
-                        faces_per_pixel=10,
+                        blur_radius=blur_radius,
+                        faces_per_pixel=2,
                         shader_str="GaussianEdge",
                         cameras=cameras,
                         lights=lights,

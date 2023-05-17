@@ -11,13 +11,14 @@ from pytorch3d.loss import (
 )
 
 from pytorch3d.renderer import *
+from pytorch3d.ops.subdivide_meshes import SubdivideMeshes
 
 import os
 import wandb
 import numpy as np
 from tqdm import tqdm
 
-from src.loss.mesh_chamfer_distance import mesh_chamfer_distance
+from src.loss.mesh_chamfer_distance import mesh_chamfer_distance, mesh_distance
 from src.structure.mesh import *
 from src.utils.convert_PIL_grid_img import convert_PIL_grid_img
 from src.renderer.renderer import *
@@ -46,25 +47,19 @@ def prepare_renderers(args, meshes, cameras, lights, num_views):
     renderers['softphong'] = define_renderer(device=device,
                                          image_size=args['image_resolution'],
                                          blur_radius=blur_radius,
-                                         faces_per_pixel=1,  #args['faces_per_pixel'],
+                                         faces_per_pixel=args['faces_per_pixel'],
                                          shader_str="SoftPhong",
                                          cameras=cameras,
                                          lights=lights
                                          )
-    target_imgs['softphong'] = render_imgs(renderers['softphong'], meshes, cameras, lights, num_views)
-    softphong_imgs_grid = convert_PIL_grid_img(target_imgs['softphong'], target_channel=None, nrow=5)
-
     renderers['silhouette'] = define_renderer(device=device,
                                         image_size=args['image_resolution'],
                                         blur_radius=blur_radius,
-                                        faces_per_pixel=1,  #args['faces_per_pixel'],
+                                        faces_per_pixel=args['faces_per_pixel'],
                                         shader_str="SoftSilhouette",
                                         cameras=cameras,
                                         lights=lights
                                     )
-    target_imgs['silhouette'] = render_imgs(renderers['silhouette'], meshes, cameras, lights, num_views)
-    silhouette_imgs_grid = convert_PIL_grid_img(target_imgs['silhouette'], target_channel=3, nrow=5)
-
     renderers['model_edge'] = define_renderer(device=device,
                                     image_size=args['image_resolution'],
                                     shader_str=args['model_edge_type'],
@@ -72,9 +67,6 @@ def prepare_renderers(args, meshes, cameras, lights, num_views):
                                     lights=lights,
                                     gaussian_edge_thr=args['gaussian_edge_thr']
                                 )
-    target_imgs['model_edge'] = render_imgs(renderers['model_edge'], meshes, cameras, lights, num_views)
-    edge_imgs_grid = convert_PIL_grid_img(target_imgs['model_edge'], target_channel=0, nrow=5)
-
     renderers['depth'] = define_renderer(device=device,
                                     image_size=args['image_resolution'],
                                     blur_radius=blur_radius,
@@ -83,6 +75,15 @@ def prepare_renderers(args, meshes, cameras, lights, num_views):
                                     cameras=cameras,
                                     lights=None,
                                 )
+    target_imgs['softphong'] = render_imgs(renderers['softphong'], meshes, cameras, lights, num_views)
+    softphong_imgs_grid = convert_PIL_grid_img(target_imgs['softphong'], target_channel=None, nrow=5)
+
+    target_imgs['silhouette'] = render_imgs(renderers['silhouette'], meshes, cameras, lights, num_views)
+    silhouette_imgs_grid = convert_PIL_grid_img(target_imgs['silhouette'], target_channel=3, nrow=5)
+
+    target_imgs['model_edge'] = render_imgs(renderers['model_edge'], meshes, cameras, lights, num_views)
+    edge_imgs_grid = convert_PIL_grid_img(target_imgs['model_edge'], target_channel=0, nrow=5)
+
     target_imgs['depth'] = render_imgs(renderers['depth'], meshes, cameras, lights=None, num_views=num_views)
     depth_imgs_grid = convert_PIL_grid_img(target_imgs['depth'], target_channel=0, nrow=5)
 
@@ -92,26 +93,6 @@ def prepare_renderers(args, meshes, cameras, lights, num_views):
         "GT Edge Img": edge_imgs_grid,
         "GT Depth Img": depth_imgs_grid
     })
-    # plt.figure(figsize=(25, 10))
-    # for i in range(1, 11):
-    #     plt.subplot(2, 5, i)
-    #     plt.imshow(target_imgs['softphong'][i-1, ...].cpu().detach().numpy())
-    # plt.savefig('./output/softphong.png', bbox_inches='tight', pad_inches=0)
-    # plt.figure(figsize=(25, 10))
-    # for i in range(1, 11):
-    #     plt.subplot(2, 5, i)
-    #     plt.imshow(target_imgs['silhouette'][i-1, ..., 3].cpu().detach().numpy())
-    # plt.savefig('./output/softsilhouette.png', bbox_inches='tight', pad_inches=0)
-    # plt.figure(figsize=(25, 10))
-    # for i in range(1, 11):
-    #     plt.subplot(2, 5, i)
-    #     plt.imshow(target_imgs['model_edge'][i-1, ..., 0].cpu().detach().numpy(), cmap='gray')
-    # plt.savefig('./output/model_edge.png', bbox_inches='tight', pad_inches=0)
-    # plt.figure(figsize=(25, 10))
-    # for i in range(1, 11):
-    #     plt.subplot(2, 5, i)
-    #     plt.imshow(target_imgs['depth'][i-1, ..., 0].cpu().detach().numpy(), cmap='gray')
-    # plt.savefig('./output/depth.png', bbox_inches='tight', pad_inches=0)
 
     return renderers, target_imgs
 
@@ -145,18 +126,25 @@ def train_test(args):
 
     if args['init_src_mesh_type'] == 'ico_sphere':
         src_mesh = ico_sphere(int(args['init_sphere_level']), device)
-    elif args['init_src_mesh_type'] == 'simplified':
+    if args['init_src_mesh_type'] == 'simplified':
         src_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}_simplified.obj")
         src_mesh = load_mesh(device, src_obj_path, normalize=True)
-    elif args['init_src_mesh_type'] == 'convexhull':
+        subdivide = SubdivideMeshes()
+        src_mesh = subdivide(src_mesh)
+    if args['init_src_mesh_type'] == 'convexhull':
         origin_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}.obj")
         origin_mesh = load_mesh(device, origin_obj_path, normalize=True)
         src_mesh = mesh_convexhull(device, origin_mesh, args['convexhull_subdiv_level'])
     
-    src_mesh = src_mesh.scale_verts(args['init_src_mesh_scale'])
-
     verts_shape = src_mesh.verts_packed().shape
     deform_verts = torch.full(verts_shape, 0.0, device=device, requires_grad=True)
+
+    if (args['init_src_mesh_type'] == 'simplified') & (args['fixed_sharp_verts'] == True):
+        sharp_verts = get_sharp_verts(device, src_mesh, args['sharpness_threshold'])
+        mask = sharp_verts_mask(deform_verts, sharp_verts)
+    else:
+        src_mesh = src_mesh.scale_verts(args['init_src_mesh_scale'])
+        mask = torch.zeros_like(deform_verts, dtype=torch.bool)
 
     num_views_per_iteration = args['num_views_per_iteration']
     iter = args['iter']
@@ -180,7 +168,7 @@ def train_test(args):
         optimizer.zero_grad()
 
         # Deform the mesh
-        new_src_mesh = src_mesh.offset_verts(deform_verts)
+        new_src_mesh = src_mesh.offset_verts(deform_verts * ~mask)
 
         # Losses to smooth /regularize the mesh shape
         loss = {k: torch.tensor(0.0, device=device) for k in losses}
@@ -225,7 +213,6 @@ def train_test(args):
         sum_loss.backward()
         optimizer.step()
 
-
     # Plot mesh
     with torch.no_grad():
         predicted_mesh = new_src_mesh.detach().extend(num_views)
@@ -233,32 +220,43 @@ def train_test(args):
         predicted_mesh = convert_textureless_mesh_into_textue_mesh(device, predicted_mesh)
         predicted_mesh = predicted_mesh.extend(args["num_views"])
 
-        predicted_silhouette = renderers['silhouette'](predicted_mesh, cameras=cameras, lights=lights)
-        silhouette_imgs_grid = convert_PIL_grid_img(predicted_silhouette, target_channel=3, nrow=5)
+        target_imgs['softphong'] = render_imgs(renderers['softphong'], predicted_mesh, cameras, lights, num_views)
+        softphong_imgs_grid = convert_PIL_grid_img(target_imgs['softphong'], target_channel=None, nrow=5)
 
-        predicted_edge = renderers['model_edge'](predicted_mesh, cameras=cameras, lights=lights)
-        edge_imgs_grid = convert_PIL_grid_img(predicted_edge, target_channel=0, nrow=5)
+        target_imgs['silhouette'] = render_imgs(renderers['silhouette'], predicted_mesh, cameras, lights, num_views)
+        silhouette_imgs_grid = convert_PIL_grid_img(target_imgs['silhouette'], target_channel=3, nrow=5)
 
-        predicted_phong = renderers['softphong'](predicted_mesh, cameras=cameras, lights=lights)
-        phong_imgs_grid = convert_PIL_grid_img(predicted_phong, target_channel=None, nrow=5)
+        target_imgs['model_edge'] = render_imgs(renderers['model_edge'], predicted_mesh, cameras, lights, num_views)
+        edge_imgs_grid = convert_PIL_grid_img(target_imgs['model_edge'], target_channel=0, nrow=5)
+
+        target_imgs['depth'] = render_imgs(renderers['depth'], predicted_mesh, cameras, lights=None, num_views=num_views)
+        depth_imgs_grid = convert_PIL_grid_img(target_imgs['depth'], target_channel=0, nrow=5)
 
         wandb.log({
+            "Test Phong Img": softphong_imgs_grid,
             "Test Silhouette Img": silhouette_imgs_grid,
             "Test Edge Img": edge_imgs_grid,
-            "Test Phong Img": phong_imgs_grid,
+            "Test Depth Img": depth_imgs_grid
         })
 
+    result_table = wandb.Table(columns=["CD", "Dist result pc -> target mesh", "Dist target pc -> result mesh"])
+
+    final_CD = mesh_chamfer_distance(new_src_mesh, target_mesh, args['chamfer_distance_num_samples'])
+    final_mesh_dist_forward = mesh_distance(new_src_mesh, target_mesh, args['mesh_distance_num_samples'])
+    final_mesh_dist_backward = mesh_distance(target_mesh, new_src_mesh, args['mesh_distance_num_samples'])
+    result_table.add_data(final_CD, final_mesh_dist_forward, final_mesh_dist_backward)
+    
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
 
     final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
     save_obj(final_obj, final_verts, final_faces)
 
     wandb.log({
-        "Final Model": wandb.Object3D(open(final_obj))
+        "Final Model": wandb.Object3D(open(final_obj)),
+        "Result": result_table
     })
 
     wandb.save(final_obj)
-
 
     # TODO:
     # 1) 처음에 실루엣 기반으로 전체 모양을 잡고, edge로 파인 튜닝을 하는 개념으로 접근?
@@ -271,57 +269,58 @@ def train_test(args):
     
 
 if __name__ == "__main__":
-    # wandb.run.name = 'your-run-name'
-    # wandb.run.save()
-
     args = {}
 
     #* Wandb
     args['wandb_mode'] = 'online'                 # 'online' for logging, 'disabled' for debug
+    # args['wandb_mode'] = 'disabled'              
 
     #* Data preparation
-    args['objfile'] = 'fandisk'
-    args['init_sphere_level'] = 4
-    args['init_src_mesh_type'] = 'ico_sphere'       # 'ico_sphere' or 'simplified' or 'convexhull'
+    args['objfile'] = 'stanford_bunny'
+    args['init_sphere_level'] = 3
+    args['init_src_mesh_type'] = 'simplified'       # 'ico_sphere' or 'simplified' or 'convexhull'
     args['init_src_mesh_scale'] = 1.2               # scale factor of init source mesh
+    args['convexhull_subdiv_level'] = 1             # N of subdivision of convexhull result
+    args['fixed_sharp_verts'] = False                # Detach vertices on sharp line
+    args['sharpness_threshold'] = 10                # If dihedral angle is higher than threshold, it will be fixed 
 
     #* Camera
-    args['cam_distance'] = 2.7                      # Distance between camera and object
+    args['cam_distance'] = 2.5                      # Distance between camera and object
     args['num_views'] = 12
     args['znear'] = 1.0
-    args['zfar'] = 10.0
+    args['zfar'] = 4.0
     args['cam_type'] = 'FoVOrthographic'            # 'FoVPerspective' or 'FoVOrthographic'
     args['orthographic_size'] = 1.3                 # size of orthographic camera
 
     #* Renderer
-    args['sigma'] = 0.0#1e-4                            # refer SoftRas
-    args['faces_per_pixel'] = 10                    # of SoftRas
-    args['image_resolution'] = 1024
+    args['sigma'] = 1e-5                            # refer SoftRas
+    args['faces_per_pixel'] = 10                    # SoftRas
+    args['image_resolution'] = 512
 
     #* Training
-    args['num_views_per_iteration'] = 5
-    args['iter'] = 400
-    args['convexhull_subdiv_level'] = 1             # N of subdivision of convexhull result
+    args['num_views_per_iteration'] = 4
+    args['iter'] = 500
 
     args['shaders'] = ['silhouette', 'model_edge', 'depth']
-    args['use_silhouette_loss'] = False
+    args['use_silhouette_loss'] = True
     args['use_depth_loss'] = True
     args['use_model_edge_loss'] = True
     args['use_cd_loss'] = True
-    args['chamfer_distance_num_samples'] = 10000    # N of samples of mesh when calculate chamfer distance
+    args['chamfer_distance_num_samples'] = 40000    # N of samples of mesh when calculate chamfer distance
+    args['mesh_distance_num_samples'] = 40000
     args['model_edge_type'] = 'GaussianEdge'        # 'GaussianEdge' or 'SimpleEdge'
     args['gaussian_edge_thr'] = 0.01
 
-    # loss weights differences
-    args['loss_silhouette_weight'] = 1.0
-    args['loss_depth_weight'] = 1.0
-    args['loss_edge_weight'] = 0.8
+    # loss weights
+    args['loss_edge_weight'] = 0.2
+    args['loss_laplacian_weight'] = 0.02
     args['loss_normal_weight'] = 0.01
-    args['loss_laplacian_weight'] = 0.0
+    args['loss_silhouette_weight'] = 1.0
     args['loss_model_edge_weight'] = 1.0
+    args['loss_depth_weight'] = 1.0
     args['loss_chamfer_distance_weight'] = 1.0      
 
-    args['lr'] = 1.0
+    args['lr'] = 0.3
     args['momentum'] = 0.9
 
     wandb.init(entity='jbnu-vclab', project="mesh_simplification", reinit=True, mode=args['wandb_mode'])
@@ -329,4 +328,4 @@ if __name__ == "__main__":
 
     train_test(args)
 
-    wandb.finish(quiet=True) # remains 'running' status w/o this line
+    wandb.finish(quiet=True) # 'running' status forever w/o this line

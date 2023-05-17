@@ -2,8 +2,6 @@ import torch
 import torch.nn.functional as F
 from pytorch3d.renderer.mesh.shader import ShaderBase
 
-# copied from pytorch3d shader, because of its bug
-
 class HardDepthShader(ShaderBase):
     """
     Renders the Z distances of the closest face for each pixel. If no face is

@@ -37,25 +37,25 @@ class GaussianEdgeShader(ShaderBase):
         edge_img = (edge_zbuf >= self.edge_threshold).float()
 
         blurred_img = F.conv2d(edge_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 5)
+        blurred_img = (blurred_img * 2).clamp(0, 1)
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 5)
         blurred_img = (blurred_img + edge_img).clamp(0, 1)
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 5)
+        blurred_img = (blurred_img * 2).clamp(0, 1)
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 5)
         blurred_img = (blurred_img + edge_img).clamp(0, 1)
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 10)
+        blurred_img = (blurred_img * 2).clamp(0, 1)
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 10)
         blurred_img = (blurred_img + edge_img).clamp(0, 1)
-
-        # blurred_img = F.conv2d(edge_img, gaussian_filter, padding='same')
-        # blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        # blurred_img = F.conv2d(blurred_img, gaussian_filter, padding='same')
-        # blurred_img = blurred_img + edge_img
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 10)
+        blurred_img = (blurred_img + edge_img).clamp(0, 1)
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 100)
+        blurred_img = (blurred_img + edge_img).clamp(0, 1)
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 100)
+        blurred_img = (blurred_img + edge_img).clamp(0, 1)
+        blurred_img = apply_filter(blurred_img, gaussian_filter, 10)
 
         image = blurred_img.permute(0, 2, 3, 1) # (bxWxHxc)
 
@@ -85,3 +85,9 @@ class SimpleEdgeShader(ShaderBase):
         image = edge_img.permute(0, 2, 3, 1) # (bxWxHxc)
 
         return image
+    
+
+def apply_filter(image, target_filter, count):
+    for i in range(count):
+        image = F.conv2d(image, target_filter, padding='same')
+    return image
