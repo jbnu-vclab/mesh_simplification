@@ -15,6 +15,7 @@ from pytorch3d.ops.subdivide_meshes import SubdivideMeshes
 
 import os
 import wandb
+import config
 import numpy as np
 from tqdm import tqdm
 
@@ -76,15 +77,13 @@ def prepare_renderers(args, meshes, cameras, lights, num_views):
                                     lights=None,
                                 )
     target_imgs['softphong'] = render_imgs(renderers['softphong'], meshes, cameras, lights, num_views)
-    softphong_imgs_grid = convert_PIL_grid_img(target_imgs['softphong'], target_channel=None, nrow=5)
-
     target_imgs['silhouette'] = render_imgs(renderers['silhouette'], meshes, cameras, lights, num_views)
-    silhouette_imgs_grid = convert_PIL_grid_img(target_imgs['silhouette'], target_channel=3, nrow=5)
-
     target_imgs['model_edge'] = render_imgs(renderers['model_edge'], meshes, cameras, lights, num_views)
-    edge_imgs_grid = convert_PIL_grid_img(target_imgs['model_edge'], target_channel=0, nrow=5)
-
     target_imgs['depth'] = render_imgs(renderers['depth'], meshes, cameras, lights=None, num_views=num_views)
+
+    softphong_imgs_grid = convert_PIL_grid_img(target_imgs['softphong'], target_channel=None, nrow=5)
+    silhouette_imgs_grid = convert_PIL_grid_img(target_imgs['silhouette'], target_channel=3, nrow=5)
+    edge_imgs_grid = convert_PIL_grid_img(target_imgs['model_edge'], target_channel=0, nrow=5)
     depth_imgs_grid = convert_PIL_grid_img(target_imgs['depth'], target_channel=0, nrow=5)
 
     wandb.log({
@@ -129,8 +128,9 @@ def train_test(args):
     if args['init_src_mesh_type'] == 'simplified':
         src_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}_simplified.obj")
         src_mesh = load_mesh(device, src_obj_path, normalize=True)
-        subdivide = SubdivideMeshes()
-        src_mesh = subdivide(src_mesh)
+        #? QEM simplified 로 시작할 때는 subdivide 안함(face 수 유지)
+        # subdivide = SubdivideMeshes()
+        # src_mesh = subdivide(src_mesh)
     if args['init_src_mesh_type'] == 'convexhull':
         origin_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}.obj")
         origin_mesh = load_mesh(device, origin_obj_path, normalize=True)
@@ -156,7 +156,7 @@ def train_test(args):
         "normal": {"weight": args['loss_normal_weight'], "values": []},
         "laplacian": {"weight": args['loss_laplacian_weight'], "values": []},
         "model_edge": {"weight": args['loss_model_edge_weight'], "values": []},
-        "chamfer_distance": {"weight": args['loss_chamfer_distance_weight'], "values": []},
+        "chamfer_distance": {"weight": args['loss_cd_weight'], "values": []},
     }
 
     # The optimizer
@@ -190,7 +190,7 @@ def train_test(args):
                 target_imgs['model_edge'], loss_func=mse_loss, target_channel=0)
 
         if args['use_cd_loss']:
-            loss["chamfer_distance"] = mesh_chamfer_distance(new_src_mesh, target_mesh, args['chamfer_distance_num_samples'])
+            loss["chamfer_distance"] = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
 
         # Weighted sum of the losses
         sum_loss = torch.tensor(0.0, device=device)
@@ -241,15 +241,17 @@ def train_test(args):
 
     result_table = wandb.Table(columns=["CD", "Dist result pc -> target mesh", "Dist target pc -> result mesh"])
 
-    final_CD = mesh_chamfer_distance(new_src_mesh, target_mesh, args['chamfer_distance_num_samples'])
-    final_mesh_dist_forward = mesh_distance(new_src_mesh, target_mesh, args['mesh_distance_num_samples'])
-    final_mesh_dist_backward = mesh_distance(target_mesh, new_src_mesh, args['mesh_distance_num_samples'])
+    final_CD = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
+    final_mesh_dist_forward = mesh_distance(new_src_mesh, target_mesh, args['mesh_dist_num_samples'])
+    final_mesh_dist_backward = mesh_distance(target_mesh, new_src_mesh, args['mesh_dist_num_samples'])
     result_table.add_data(final_CD, final_mesh_dist_forward, final_mesh_dist_backward)
     
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
 
-    final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
+    # final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
+    final_obj = os.path.join('final_model.obj')
     save_obj(final_obj, final_verts, final_faces)
+    # save_obj('./final_model.obj', final_verts, final_faces)
 
     wandb.log({
         "Final Model": wandb.Object3D(open(final_obj)),
@@ -269,62 +271,16 @@ def train_test(args):
     
 
 if __name__ == "__main__":
-    args = {}
+    args = config.args  
 
-    #* Wandb
-    args['wandb_mode'] = 'online'                 # 'online' for logging, 'disabled' for debug
-    # args['wandb_mode'] = 'disabled'              
-
-    #* Data preparation
-    args['objfile'] = 'stanford_bunny'
-    args['init_sphere_level'] = 3
-    args['init_src_mesh_type'] = 'simplified'       # 'ico_sphere' or 'simplified' or 'convexhull'
-    args['init_src_mesh_scale'] = 1.2               # scale factor of init source mesh
-    args['convexhull_subdiv_level'] = 1             # N of subdivision of convexhull result
-    args['fixed_sharp_verts'] = False                # Detach vertices on sharp line
-    args['sharpness_threshold'] = 10                # If dihedral angle is higher than threshold, it will be fixed 
-
-    #* Camera
-    args['cam_distance'] = 2.5                      # Distance between camera and object
-    args['num_views'] = 12
-    args['znear'] = 1.0
-    args['zfar'] = 4.0
-    args['cam_type'] = 'FoVOrthographic'            # 'FoVPerspective' or 'FoVOrthographic'
-    args['orthographic_size'] = 1.3                 # size of orthographic camera
-
-    #* Renderer
-    args['sigma'] = 1e-5                            # refer SoftRas
-    args['faces_per_pixel'] = 10                    # SoftRas
-    args['image_resolution'] = 512
-
-    #* Training
-    args['num_views_per_iteration'] = 4
-    args['iter'] = 500
-
-    args['shaders'] = ['silhouette', 'model_edge', 'depth']
-    args['use_silhouette_loss'] = True
-    args['use_depth_loss'] = True
-    args['use_model_edge_loss'] = True
-    args['use_cd_loss'] = True
-    args['chamfer_distance_num_samples'] = 40000    # N of samples of mesh when calculate chamfer distance
-    args['mesh_distance_num_samples'] = 40000
-    args['model_edge_type'] = 'GaussianEdge'        # 'GaussianEdge' or 'SimpleEdge'
-    args['gaussian_edge_thr'] = 0.01
-
-    # loss weights
-    args['loss_edge_weight'] = 0.2
-    args['loss_laplacian_weight'] = 0.02
-    args['loss_normal_weight'] = 0.01
-    args['loss_silhouette_weight'] = 1.0
-    args['loss_model_edge_weight'] = 1.0
-    args['loss_depth_weight'] = 1.0
-    args['loss_chamfer_distance_weight'] = 1.0      
-
-    args['lr'] = 0.3
-    args['momentum'] = 0.9
-
-    wandb.init(entity='jbnu-vclab', project="mesh_simplification", reinit=True, mode=args['wandb_mode'])
-    wandb.config.update(args)
+    wandb.init(entity=args['wandb_entity'],
+               project=args['wandb_project'],
+               reinit=args['wandb_reinit'],
+               mode=args['wandb_mode'],
+               config=args,
+               )
+    # wandb.config.update(args)
+    # wandb.config
 
     train_test(args)
 
