@@ -15,7 +15,7 @@ else:
 
 if __name__=='__main__':
     PATH = './data/'
-    file_name = 'stanford_bunny'
+    file_name = 'fandisk'
     A = load_mesh(device, PATH + file_name + '.obj', normalize=False)
     B = load_mesh(device, PATH + file_name + '_simplified.obj', normalize=False)
 
@@ -24,4 +24,4 @@ if __name__=='__main__':
     IO().save_pointcloud(spcl, "./source_pointcloud.ply")
     IO().save_pointcloud(tpcl, "./target_pointcloud.ply")
 
-    print(f'{cd}, {mesh_distance(A, B, 40000)}, {mesh_distance(B, A, 40000)}')
+    print(f'{cd}, {mesh_distance(B, A, 40000)}, {mesh_distance(A, B, 40000)}')
