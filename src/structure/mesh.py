@@ -3,12 +3,22 @@ import torch
 import trimesh
 import os
 import numpy as np
+from glob import glob
 from pytorch3d.io import save_obj, load_obj
 from pytorch3d.renderer import *
 from pytorch3d.structures import Meshes
 from pytorch3d.ops import packed_to_padded
 from pytorch3d.ops.subdivide_meshes import SubdivideMeshes
+from pytorch3d.io import IO
 
+def normalize_mesh(mesh):
+    verts = mesh.verts_packed()
+    center = verts.mean(0)
+    scale = max((verts - center).abs().max(0)[0])
+    mesh.offset_verts_(-center)
+    mesh.scale_verts_((1.0 / float(scale)))
+
+    return mesh
 
 def load_mesh(device, obj_path, normalize=True):
     verts, faces_idx, _ = load_obj(obj_path)
@@ -27,12 +37,7 @@ def load_mesh(device, obj_path, normalize=True):
     )
 
     if normalize == True:
-        verts = mesh.verts_packed()
-        N = verts.shape[0]
-        center = verts.mean(0)
-        scale = max((verts - center).abs().max(0)[0])
-        mesh.offset_verts_(-center)
-        mesh.scale_verts_((1.0 / float(scale)))
+        mesh = normalize_mesh(mesh)
 
     return mesh
 
@@ -218,26 +223,34 @@ if __name__=='__main__':
 
     # Set paths
     DATA_DIR = "."
-    obj_filename = os.path.join(DATA_DIR, "data/fandisk.obj")
+    # obj_filename = os.path.join(DATA_DIR, "data/fandisk.obj")
+    SAVE_DIR = "./data/after_normalize/"
 
-    # Load obj file
-    verts, faces_idx, _ = load_obj(obj_filename, device=device)
-    faces = faces_idx.verts_idx
+    before_normalization = glob('./data/before_normalize/*.obj')
 
-    verts_rgb = torch.ones_like(verts)[None] # (1, V, 3)
-    textures = TexturesVertex(verts_features=verts_rgb.to(device))
+    for filepath in before_normalization:
+        filename = os.path.basename(filepath)
+        before = load_mesh(device, filepath, normalize=True)
+        IO().save_mesh(before, SAVE_DIR + filename)
 
-    mesh = Meshes(
-        verts=[verts.to(device)],
-        faces=[faces.to(device)],
-        textures=textures
-    )
+    # # Load obj file
+    # verts, faces_idx, _ = load_obj(obj_filename, device=device)
+    # faces = faces_idx.verts_idx
+
+    # verts_rgb = torch.ones_like(verts)[None] # (1, V, 3)
+    # textures = TexturesVertex(verts_features=verts_rgb.to(device))
+
+    # mesh = Meshes(
+    #     verts=[verts.to(device)],
+    #     faces=[faces.to(device)],
+    #     textures=textures
+    # )
 
     
     # final_obj = mesh_convexhull(device, mesh)
-    ch_mesh = mesh_convexhull(device, mesh, 2)
-    ch_mesh = ch_mesh.scale_verts(5.0)
+    # ch_mesh = mesh_convexhull(device, mesh, 2)
+    # ch_mesh = ch_mesh.scale_verts(5.0)
 
-    final_obj_path = os.path.join('./final_model.obj')
-    save_obj(final_obj_path, ch_mesh.verts_packed(), ch_mesh.faces_packed())
-    print('dsa')
+    # final_obj_path = os.path.join('./final_model.obj')
+    # save_obj(final_obj_path, ch_mesh.verts_packed(), ch_mesh.faces_packed())
+    # print('dsa')

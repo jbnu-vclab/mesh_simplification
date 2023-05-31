@@ -6,13 +6,15 @@ args = {
     'wandb_mode': 'online', # 'online' for logging, 'disabled' for debug
 
     #* Data
-    'objfile' : 'stanford_bunny',
+    'objfile' : 'fandisk',
     'init_sphere_level' : 4,
     'init_src_mesh_type' : 'ico_sphere',       # 'ico_sphere' or 'simplified' or 'convexhull'
     'init_src_mesh_scale' : 1.2,               # scale factor of init source mesh
     'convexhull_subdiv_level' : 1,             # N of subdivision of convexhull result
-    'fixed_sharp_verts' : False,               # Detach vertices on sharp line
-    'sharpness_threshold' : 10,                 # If dihedral angle is higher than threshold, it will be fixed 
+    'fixed_sharp_verts' : True,               # Detach vertices on sharp line
+    'sharpness_threshold' : 4,                 # If dihedral angle is higher than threshold, it will be fixed 
+    'normalize_source_mesh' : False,
+    'normalize_target_mesh' : False,
 
     #* Renderer
     'cam_distance' : 1.8,                      # Distance between camera and object

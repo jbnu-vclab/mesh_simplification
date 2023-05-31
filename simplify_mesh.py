@@ -27,6 +27,7 @@ from src.loss.loss import mse_loss, loss_with_random_permutation
 # from src.renderer.renderer import define_renderer, define_light, define_multi_view_cam, render_imgs
 
 from matplotlib import pyplot as plt
+from pytorch3d.io import IO
 
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
@@ -96,7 +97,7 @@ def prepare_renderers(args, meshes, cameras, lights, num_views):
     return renderers, target_imgs
 
 def prepare_GT(args, obj_path, num_views):
-    target_mesh = load_mesh(device, obj_path, normalize=True)
+    target_mesh = load_mesh(device, obj_path, normalize=args['normalize_target_mesh'])
     meshes = target_mesh.extend(num_views)
 
     cameras = define_multi_view_cam(device=device,
@@ -127,13 +128,13 @@ def train_test(args):
         src_mesh = ico_sphere(int(args['init_sphere_level']), device)
     if args['init_src_mesh_type'] == 'simplified':
         src_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}_simplified.obj")
-        src_mesh = load_mesh(device, src_obj_path, normalize=True)
+        src_mesh = load_mesh(device, src_obj_path, normalize=args['normalize_source_mesh'])
         #? QEM simplified 로 시작할 때는 subdivide 안함(face 수 유지)
         # subdivide = SubdivideMeshes()
         # src_mesh = subdivide(src_mesh)
     if args['init_src_mesh_type'] == 'convexhull':
         origin_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}.obj")
-        origin_mesh = load_mesh(device, origin_obj_path, normalize=True)
+        origin_mesh = load_mesh(device, origin_obj_path, normalize=args['normalize_source_mesh'])
         src_mesh = mesh_convexhull(device, origin_mesh, args['convexhull_subdiv_level'])
     
     verts_shape = src_mesh.verts_packed().shape
@@ -190,7 +191,7 @@ def train_test(args):
                 target_imgs['model_edge'], loss_func=mse_loss, target_channel=0)
 
         if args['use_cd_loss']:
-            loss["chamfer_distance"] = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
+            loss["chamfer_distance"], _, _ = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
 
         # Weighted sum of the losses
         sum_loss = torch.tensor(0.0, device=device)
@@ -241,16 +242,22 @@ def train_test(args):
 
     result_table = wandb.Table(columns=["CD", "Dist result pc -> target mesh", "Dist target pc -> result mesh"])
 
-    final_CD = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
+    final_CD, spcl, tpcl = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
+
+    IO().save_pointcloud(spcl, "./source_pcl.ply")
+    IO().save_pointcloud(tpcl, "./target_pcl.ply")
+
     final_mesh_dist_forward = mesh_distance(new_src_mesh, target_mesh, args['mesh_dist_num_samples'])
     final_mesh_dist_backward = mesh_distance(target_mesh, new_src_mesh, args['mesh_dist_num_samples'])
     result_table.add_data(final_CD, final_mesh_dist_forward, final_mesh_dist_backward)
     
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
 
-    # final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
-    final_obj = os.path.join('final_model.obj')
-    save_obj(final_obj, final_verts, final_faces)
+    # Wandb 폴더에 저장
+    final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
+
+    # 현재 폴더에 저장
+    save_obj(os.path.join('final_model.obj'), final_verts, final_faces)
     # save_obj('./final_model.obj', final_verts, final_faces)
 
     wandb.log({
