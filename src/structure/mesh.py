@@ -226,7 +226,7 @@ if __name__=='__main__':
     # obj_filename = os.path.join(DATA_DIR, "data/fandisk.obj")
     SAVE_DIR = "./data/after_normalize/"
 
-    before_normalization = glob('./data/before_normalize/*.obj')
+    before_normalization = glob('./data/ModelNet/*.obj')
 
     for filepath in before_normalization:
         filename = os.path.basename(filepath)

@@ -244,7 +244,7 @@ def train_test(args):
 
     final_CD, spcl, tpcl = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
 
-    IO().save_pointcloud(spcl, "./source_pcl.ply")
+    IO().save_pointcloud(spcl, "./result_pcl.ply")
     IO().save_pointcloud(tpcl, "./target_pcl.ply")
 
     final_mesh_dist_forward = mesh_distance(new_src_mesh, target_mesh, args['mesh_dist_num_samples'])
@@ -253,12 +253,12 @@ def train_test(args):
     
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
 
-    # Wandb 폴더에 저장
     final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
 
+    # Wandb 폴더에 저장
+    save_obj(final_obj, final_verts, final_faces)
     # 현재 폴더에 저장
-    save_obj(os.path.join('final_model.obj'), final_verts, final_faces)
-    # save_obj('./final_model.obj', final_verts, final_faces)
+    save_obj('./final_model.obj', final_verts, final_faces)
 
     wandb.log({
         "Final Model": wandb.Object3D(open(final_obj)),
