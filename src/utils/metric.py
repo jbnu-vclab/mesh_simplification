@@ -13,14 +13,11 @@ if torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-def single_mesh_calc_metric(A_path: str, B_path: str):
-    A = load_mesh(device, A_path, normalize=False)
-    B = load_mesh(device, B_path, normalize=False)
+def calc_metric(source_mesh: Meshes, target_mesh: Meshes, num_samples):
+    cd, spcl, tpcl = mesh_chamfer_distance(source_mesh, target_mesh, num_samples)
 
-    cd, spcl, tpcl = mesh_chamfer_distance(A, B, 40000)
-
-    src2gt = mesh_distance(B, A, 40000)
-    gt2src = mesh_distance(A, B, 40000)
+    src2gt = mesh_distance(target_mesh, source_mesh, num_samples)
+    gt2src = mesh_distance(source_mesh, target_mesh, num_samples)
 
     return cd, src2gt, gt2src
 
@@ -31,9 +28,9 @@ if __name__=='__main__':
     A = load_mesh(device, PATH + file_name + '.obj', normalize=False)
     B = load_mesh(device, PATH + file_name + '_simplified.obj', normalize=False)
 
-    cd, spcl, tpcl = mesh_chamfer_distance(A, B, 40000)
+    cd, src2gt, gt2src = calc_metric(A, B)
 
     # IO().save_pointcloud(spcl, "./source_pointcloud.ply")
     # IO().save_pointcloud(tpcl, "./target_pointcloud.ply")
 
-    print(f'{cd}, {mesh_distance(B, A, 40000)}, {mesh_distance(A, B, 40000)}')
+    print(f'{cd}, {src2gt}, {gt2src}')

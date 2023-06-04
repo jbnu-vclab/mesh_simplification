@@ -24,6 +24,7 @@ from src.structure.mesh import *
 from src.utils.convert_PIL_grid_img import convert_PIL_grid_img
 from src.renderer.renderer import *
 from src.loss.loss import mse_loss, loss_with_random_permutation
+from src.utils.metric import calc_metric
 # from src.renderer.renderer import define_renderer, define_light, define_multi_view_cam, render_imgs
 
 from matplotlib import pyplot as plt
@@ -118,7 +119,7 @@ def prepare_GT(args, obj_path, num_views):
 
 def train_test(args):
     DATA_DIR = "data"
-    obj_path = os.path.join(DATA_DIR, f"{args['objfile']}.obj")
+    obj_path = os.path.join(DATA_DIR, f"original/{args['objfile']}.obj")
     num_views = args['num_views']
     blur_radius = np.log(1. / 1e-4 - 1.) * args['sigma']
 
@@ -127,18 +128,22 @@ def train_test(args):
     if args['init_src_mesh_type'] == 'ico_sphere':
         src_mesh = ico_sphere(int(args['init_sphere_level']), device)
     if args['init_src_mesh_type'] == 'simplified':
-        src_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}_simplified.obj")
+        src_obj_path = os.path.join(DATA_DIR, f"simplified/{args['simplify_level']}/{args['objfile']}.obj")
         src_mesh = load_mesh(device, src_obj_path, normalize=args['normalize_source_mesh'])
         #? QEM simplified 로 시작할 때는 subdivide 안함(face 수 유지)
         # subdivide = SubdivideMeshes()
         # src_mesh = subdivide(src_mesh)
     if args['init_src_mesh_type'] == 'convexhull':
-        origin_obj_path = os.path.join(DATA_DIR, f"{args['objfile']}.obj")
+        origin_obj_path = os.path.join(DATA_DIR, f"original/{args['objfile']}.obj")
         origin_mesh = load_mesh(device, origin_obj_path, normalize=args['normalize_source_mesh'])
         src_mesh = mesh_convexhull(device, origin_mesh, args['convexhull_subdiv_level'])
     
     verts_shape = src_mesh.verts_packed().shape
     deform_verts = torch.full(verts_shape, 0.0, device=device, requires_grad=True)
+
+    cd, src2gt, gt2src = calc_metric(src_mesh, target_mesh, args['metric_num_samples'])
+    print('|| Source Mesh <-> Ground Truth Mesh ||')
+    print(f'CD: {round(cd, 8)}\nsource pcl -> GT mesh: {round(src2gt, 8)}\nGT pcl -> source mesh: {round(gt2src, 8)}')
 
     if (args['init_src_mesh_type'] == 'simplified') & (args['fixed_sharp_verts'] == True):
         sharp_verts = get_sharp_verts(device, src_mesh, args['sharpness_threshold'])
@@ -216,43 +221,39 @@ def train_test(args):
 
     # Plot mesh
     with torch.no_grad():
-        predicted_mesh = new_src_mesh.detach().extend(num_views)
+        if args['plot_images']:
+            predicted_mesh = new_src_mesh.detach().extend(num_views)
 
-        predicted_mesh = convert_textureless_mesh_into_textue_mesh(device, predicted_mesh)
-        predicted_mesh = predicted_mesh.extend(args["num_views"])
+            predicted_mesh = convert_textureless_mesh_into_textue_mesh(device, predicted_mesh)
+            predicted_mesh = predicted_mesh.extend(args["num_views"])
 
-        target_imgs['softphong'] = render_imgs(renderers['softphong'], predicted_mesh, cameras, lights, num_views)
-        softphong_imgs_grid = convert_PIL_grid_img(target_imgs['softphong'], target_channel=None, nrow=5)
+            target_imgs['softphong'] = render_imgs(renderers['softphong'], predicted_mesh, cameras, lights, num_views)
+            softphong_imgs_grid = convert_PIL_grid_img(target_imgs['softphong'], target_channel=None, nrow=5)
 
-        target_imgs['silhouette'] = render_imgs(renderers['silhouette'], predicted_mesh, cameras, lights, num_views)
-        silhouette_imgs_grid = convert_PIL_grid_img(target_imgs['silhouette'], target_channel=3, nrow=5)
+            target_imgs['silhouette'] = render_imgs(renderers['silhouette'], predicted_mesh, cameras, lights, num_views)
+            silhouette_imgs_grid = convert_PIL_grid_img(target_imgs['silhouette'], target_channel=3, nrow=5)
 
-        target_imgs['model_edge'] = render_imgs(renderers['model_edge'], predicted_mesh, cameras, lights, num_views)
-        edge_imgs_grid = convert_PIL_grid_img(target_imgs['model_edge'], target_channel=0, nrow=5)
+            target_imgs['model_edge'] = render_imgs(renderers['model_edge'], predicted_mesh, cameras, lights, num_views)
+            edge_imgs_grid = convert_PIL_grid_img(target_imgs['model_edge'], target_channel=0, nrow=5)
 
-        target_imgs['depth'] = render_imgs(renderers['depth'], predicted_mesh, cameras, lights=None, num_views=num_views)
-        depth_imgs_grid = convert_PIL_grid_img(target_imgs['depth'], target_channel=0, nrow=5)
+            target_imgs['depth'] = render_imgs(renderers['depth'], predicted_mesh, cameras, lights=None, num_views=num_views)
+            depth_imgs_grid = convert_PIL_grid_img(target_imgs['depth'], target_channel=0, nrow=5)
 
-        wandb.log({
-            "Test Phong Img": softphong_imgs_grid,
-            "Test Silhouette Img": silhouette_imgs_grid,
-            "Test Edge Img": edge_imgs_grid,
-            "Test Depth Img": depth_imgs_grid
-        })
+            wandb.log({
+                "Test Phong Img": softphong_imgs_grid,
+                "Test Silhouette Img": silhouette_imgs_grid,
+                "Test Edge Img": edge_imgs_grid,
+                "Test Depth Img": depth_imgs_grid
+            })
 
     result_table = wandb.Table(columns=["CD", "Dist result pc -> target mesh", "Dist target pc -> result mesh"])
 
-    final_CD, spcl, tpcl = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
+    cd, src2gt, gt2src = calc_metric(new_src_mesh, target_mesh, args['metric_num_samples'])
+    result_table.add_data(cd, src2gt, gt2src)
+    print('|| Result Mesh <-> Ground Truth Mesh ||')
+    print(f'CD: {round(cd, 8)}\nresult pcl -> GT mesh: {round(src2gt, 8)}\nGT pcl -> result mesh: {round(gt2src, 8)}')
 
-    IO().save_pointcloud(spcl, "./result_pcl.ply")
-    IO().save_pointcloud(tpcl, "./target_pcl.ply")
-
-    final_mesh_dist_forward = mesh_distance(new_src_mesh, target_mesh, args['mesh_dist_num_samples'])
-    final_mesh_dist_backward = mesh_distance(target_mesh, new_src_mesh, args['mesh_dist_num_samples'])
-    result_table.add_data(final_CD, final_mesh_dist_forward, final_mesh_dist_backward)
-    
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
-
     final_obj = os.path.join(wandb.run.dir, 'final_model.obj')
 
     # Wandb 폴더에 저장
