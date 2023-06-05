@@ -6,7 +6,7 @@ args = {
     'wandb_mode': 'online',                    # 'online' for logging, 'disabled' for debug
 
     #* Data
-    'objfile' : 'armadillo',
+    'objfile' : 'happy',
     'init_sphere_level' : 4,
     'init_src_mesh_type' : 'simplified',       # 'ico_sphere' or 'simplified' or 'convexhull'
     'simplify_level' : 0.5,
@@ -41,7 +41,7 @@ args = {
     'use_silhouette_loss' : True,
     'use_depth_loss' : False,
     'use_model_edge_loss' : False,
-    'use_cd_loss' : False,
+    'use_cd_loss' : True,
 
     'loss_edge_weight' : 1.0,
     'loss_laplacian_weight' : 1.0,

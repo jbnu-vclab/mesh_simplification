@@ -143,7 +143,7 @@ def train_test(args):
 
     cd, src2gt, gt2src = calc_metric(src_mesh, target_mesh, args['metric_num_samples'])
     print('|| Source Mesh <-> Ground Truth Mesh ||')
-    print(f'CD: {round(cd, 8)}\nsource pcl -> GT mesh: {round(src2gt, 8)}\nGT pcl -> source mesh: {round(gt2src, 8)}')
+    print(f'CD: {round(cd, 8):.8f}\nsource pcl -> GT mesh: {round(src2gt, 8):.8f}\nGT pcl -> source mesh: {round(gt2src, 8):.8f}')
 
     if (args['init_src_mesh_type'] == 'simplified') & (args['fixed_sharp_verts'] == True):
         sharp_verts = get_sharp_verts(device, src_mesh, args['sharpness_threshold'])
@@ -251,7 +251,7 @@ def train_test(args):
     cd, src2gt, gt2src = calc_metric(new_src_mesh, target_mesh, args['metric_num_samples'])
     result_table.add_data(cd, src2gt, gt2src)
     print('|| Result Mesh <-> Ground Truth Mesh ||')
-    print(f'CD: {round(cd, 8)}\nresult pcl -> GT mesh: {round(src2gt, 8)}\nGT pcl -> result mesh: {round(gt2src, 8)}')
+    print(f'CD: {round(cd, 8):.8f}\nresult pcl -> GT mesh: {round(src2gt, 8):.8f}\nGT pcl -> result mesh: {round(gt2src, 8):.8f}')
 
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
     final_obj = os.path.join(wandb.run.dir, 'final_model.obj')

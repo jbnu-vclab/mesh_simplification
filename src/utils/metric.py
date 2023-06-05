@@ -19,6 +19,10 @@ def calc_metric(source_mesh: Meshes, target_mesh: Meshes, num_samples):
     src2gt = mesh_distance(target_mesh, source_mesh, num_samples)
     gt2src = mesh_distance(source_mesh, target_mesh, num_samples)
 
+    cd = cd.item()
+    src2gt = src2gt.item()
+    gt2src = gt2src.item()
+
     return cd, src2gt, gt2src
 
 if __name__=='__main__':
