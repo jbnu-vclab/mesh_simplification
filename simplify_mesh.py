@@ -36,10 +36,10 @@ if torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-def update_mesh_shape_prior_losses(mesh, loss):
-    loss["edge"] = mesh_edge_loss(mesh)
+def update_mesh_shape_prior_losses(mesh, loss, edge_target_length, laplacian_method):
+    loss["edge"] = mesh_edge_loss(mesh, edge_target_length)
     loss["normal"] = mesh_normal_consistency(mesh)
-    loss["laplacian"] = mesh_laplacian_smoothing(mesh, method="uniform")
+    loss["laplacian"] = mesh_laplacian_smoothing(mesh, method=laplacian_method)
 
 def prepare_renderers(args, meshes, cameras, lights, num_views):
     blur_radius = np.log(1. / 1e-4 - 1.) * args['sigma']
@@ -178,7 +178,7 @@ def train_test(args):
 
         # Losses to smooth /regularize the mesh shape
         loss = {k: torch.tensor(0.0, device=device) for k in losses}
-        update_mesh_shape_prior_losses(new_src_mesh, loss)
+        update_mesh_shape_prior_losses(new_src_mesh, loss, args['edge_target_length'], args['laplacian_method'])
 
         if args['use_silhouette_loss']:
             loss['silhouette'] = loss_with_random_permutation(

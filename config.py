@@ -8,7 +8,7 @@ args = {
     #* Data
     'objfile' : 'happy',
     'init_sphere_level' : 4,
-    'init_src_mesh_type' : 'simplified',       # 'ico_sphere' or 'simplified' or 'convexhull'
+    'init_src_mesh_type' : 'ico_sphere',       # 'ico_sphere' or 'simplified' or 'convexhull'
     'simplify_level' : 0.5,
     'init_src_mesh_scale' : 1.1,               # scale factor of init source mesh
     'convexhull_subdiv_level' : 1,             # N of subdivision of convexhull result
@@ -37,9 +37,11 @@ args = {
     'momentum' : 0.9,
     'cd_num_samples' : 40000,                   # N of samples of mesh when calculate CD
     'metric_num_samples' : 40000,               # N of samples of mesh when calculate metric (CD and point-to-face dist) 
+    'edge_target_length' : 0.0,               # target length of edge loss (notice: not model edge loss)
+    'laplacian_method' : 'uniform',              # 'uniform' or 'cot' or 'cotcurv' (for laplacian smoothing)
 
     'use_silhouette_loss' : True,
-    'use_depth_loss' : False,
+    'use_depth_loss' : True,
     'use_model_edge_loss' : False,
     'use_cd_loss' : True,
 
