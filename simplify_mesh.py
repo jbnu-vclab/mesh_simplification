@@ -1,30 +1,27 @@
 import torch
+import os
+import wandb
+import config
+import numpy as np
 
 from pytorch3d.utils import ico_sphere
-# Util function for loading meshes
 from pytorch3d.io import save_obj, load_obj
-
 from pytorch3d.loss import (
     mesh_edge_loss,
     mesh_laplacian_smoothing,
     mesh_normal_consistency,
 )
-
 from pytorch3d.renderer import *
 from pytorch3d.ops.subdivide_meshes import SubdivideMeshes
 
-import os
-import wandb
-import config
-import numpy as np
 from tqdm import tqdm
 
-from src.loss.mesh_chamfer_distance import mesh_chamfer_distance, mesh_distance
+from src.loss.mesh_chamfer_distance import mesh_chamfer_distance, point_to_mesh_distance
 from src.structure.mesh import *
 from src.utils.convert_PIL_grid_img import convert_PIL_grid_img
 from src.renderer.renderer import *
-from src.loss.loss import mse_loss, loss_with_random_permutation
 from src.utils.metric import calc_metric
+from src.loss.loss import loss_with_random_permutation
 # from src.renderer.renderer import define_renderer, define_light, define_multi_view_cam, render_imgs
 
 from matplotlib import pyplot as plt
@@ -97,6 +94,27 @@ def prepare_renderers(args, meshes, cameras, lights, num_views):
 
     return renderers, target_imgs
 
+#TODO: gif 생성용 렌더러
+# def prepare_logger_renderer(args):
+#     blur_radius = np.log(1. / 1e-4 - 1.) * args['sigma']
+#     logger_camera = define_multi_view_cam(device=device,
+#                                     num_views=num_views,
+#                                     distance=args['cam_distance'],
+#                                     znear=args['znear'],
+#                                     zfar=args['zfar'],
+#                                     size=args['orthographic_size'],
+#                                     cam_type=args['cam_type']
+#                                     )
+#     logger_renderer = define_renderer(device=device,
+#                                     image_size=args['image_resolution'],
+#                                     blur_radius=blur_radius,
+#                                     faces_per_pixel=args['faces_per_pixel'],
+#                                     shader_str="SoftPhong",
+#                                     cameras=cameras,
+#                                     lights=lights
+#                                     )
+
+
 def prepare_GT(args, obj_path, num_views):
     target_mesh = load_mesh(device, obj_path, normalize=args['normalize_target_mesh'])
     meshes = target_mesh.extend(num_views)
@@ -155,6 +173,9 @@ def train_test(args):
     num_views_per_iteration = args['num_views_per_iteration']
     iter = args['iter']
 
+    if not args['use_cd_loss']:
+        args['loss_cd_weight'] = 0.0
+
     losses = {
         "silhouette": {"weight": args['loss_silhouette_weight'], "values": []},
         "depth": {"weight": args['loss_depth_weight'], "values": []},
@@ -163,6 +184,7 @@ def train_test(args):
         "laplacian": {"weight": args['loss_laplacian_weight'], "values": []},
         "model_edge": {"weight": args['loss_model_edge_weight'], "values": []},
         "chamfer_distance": {"weight": args['loss_cd_weight'], "values": []},
+        "mesh_distance": {"weight": args['loss_md_weight'], "values": []},
     }
 
     # The optimizer
@@ -183,20 +205,31 @@ def train_test(args):
         if args['use_silhouette_loss']:
             loss['silhouette'] = loss_with_random_permutation(
                 num_views, num_views_per_iteration, renderers['silhouette'], new_src_mesh, cameras, lights, 
-                target_imgs['silhouette'], loss_func=mse_loss, target_channel=3)
+                target_imgs['silhouette'], loss_type=args['silhouette_loss_type'], target_channel=3)
         
         if args['use_depth_loss']:
             loss['depth'] = loss_with_random_permutation(
                 num_views, num_views_per_iteration, renderers['depth'], new_src_mesh, cameras, lights, 
-                target_imgs['depth'], loss_func=mse_loss, target_channel=0)
+                target_imgs['depth'], loss_type='mse', target_channel=0)
 
         if args['use_model_edge_loss']:
             loss['model_edge'] = loss_with_random_permutation(
                 num_views, num_views_per_iteration, renderers['model_edge'], new_src_mesh, cameras, lights, 
-                target_imgs['model_edge'], loss_func=mse_loss, target_channel=0)
+                target_imgs['model_edge'], loss_type='mse', target_channel=0)
 
-        if args['use_cd_loss']:
-            loss["chamfer_distance"], _, _ = mesh_chamfer_distance(new_src_mesh, target_mesh, args['cd_num_samples'])
+        loss["chamfer_distance"], _, _ = mesh_chamfer_distance(new_src_mesh, 
+                                                                target_mesh, 
+                                                                args['cd_num_samples'], 
+                                                                sampling_method=args['cd_sampling_method'])
+
+        if args['use_md_loss']:
+            src_to_gt = point_to_mesh_distance(new_src_mesh, 
+                                                target_mesh, 
+                                                sampling_method=args['md_sampling_method'])
+            gt_to_src = point_to_mesh_distance(target_mesh, 
+                                                new_src_mesh, 
+                                                sampling_method=args['md_sampling_method'])
+            loss['mesh_distance'] = (src_to_gt + gt_to_src) / 2.0
 
         # Weighted sum of the losses
         sum_loss = torch.tensor(0.0, device=device)
@@ -259,7 +292,13 @@ def train_test(args):
     # Wandb 폴더에 저장
     save_obj(final_obj, final_verts, final_faces)
     # 현재 폴더에 저장
-    save_obj('./final_model.obj', final_verts, final_faces)
+
+    save_dir = os.path.join(args['result_path'], f"{args['simplify_level']}")
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    final_save_path = os.path.join(save_dir, f"{args['objfile']}.obj")
+
+    save_obj(final_save_path, final_verts, final_faces)
 
     wandb.log({
         "Final Model": wandb.Object3D(open(final_obj)),
@@ -279,16 +318,16 @@ def train_test(args):
     
 
 if __name__ == "__main__":
-    args = config.args  
+    args = config.args
+    # args.update(sweep_config)
 
     wandb.init(entity=args['wandb_entity'],
                project=args['wandb_project'],
                reinit=args['wandb_reinit'],
                mode=args['wandb_mode'],
-               config=args,
                )
-    # wandb.config.update(args)
-    # wandb.config
+    args.update(wandb.config)
+    wandb.config.update(args)
 
     train_test(args)
 

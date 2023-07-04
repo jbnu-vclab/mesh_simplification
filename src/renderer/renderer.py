@@ -29,6 +29,8 @@ def define_renderer(device, image_size, shader_str, cameras, lights,
     shader = None
     if shader_str.lower() == "softphong":
         shader = SoftPhongShader(device=device, cameras=cameras, lights=lights)
+    if shader_str.lower() == "hardphong":
+        shader = HardPhongShader(device=device, cameras=cameras, lights=lights)
     if shader_str.lower() == "softsilhouette":
         shader = SoftSilhouetteShader()
     if shader_str.lower() == "gaussianedge":
@@ -46,6 +48,7 @@ def define_renderer(device, image_size, shader_str, cameras, lights,
     raster_settings = RasterizationSettings(
         image_size=image_size,
         blur_radius=blur_radius,
+        bin_size=0,
         faces_per_pixel=faces_per_pixel# if shader_str.lower() == "softphong" else 1,
     )
 

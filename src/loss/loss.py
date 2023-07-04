@@ -1,6 +1,19 @@
 import numpy as np
 
-def loss_with_random_permutation(num_views, num_views_per_iteration, renderer, new_src_mesh, cameras, lights, target_imgs, loss_func, target_channel=3):
+def loss_with_random_permutation(num_views,
+                                 num_views_per_iteration,
+                                 renderer,
+                                 new_src_mesh,
+                                 cameras,
+                                 lights,
+                                 target_imgs,
+                                 loss_type:str,
+                                 target_channel=3):
+    if loss_type == 'mse':
+        loss_func = mse_loss
+    elif loss_type == 'iou':
+        loss_func = iou_loss
+
     final_loss = 0
     for j in np.random.permutation(num_views).tolist()[:num_views_per_iteration]:
         images_predicted = renderer(new_src_mesh, cameras=cameras[j], lights=lights)
