@@ -10,6 +10,7 @@ from pytorch3d.structures import Meshes
 from pytorch3d.ops import packed_to_padded
 from pytorch3d.ops.subdivide_meshes import SubdivideMeshes
 from pytorch3d.io import IO
+import pymeshlab 
 
 def normalize_mesh(mesh):
     verts = mesh.verts_packed()
@@ -214,6 +215,7 @@ def sharp_verts_mask(deform_verts: torch.Tensor, sharp_verts: torch.Tensor):
 
     return mask
 
+
 if __name__=='__main__':
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
@@ -232,6 +234,8 @@ if __name__=='__main__':
         filename = os.path.basename(filepath)
         before = load_mesh(device, filepath, normalize=True)
         IO().save_mesh(before, SAVE_DIR + filename)
+
+    
 
     # # Load obj file
     # verts, faces_idx, _ = load_obj(obj_filename, device=device)

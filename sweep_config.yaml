@@ -1,0 +1,55 @@
+program: simplify_mesh.py
+method: grid
+parameters:
+  simplify_level:
+    values:
+      - 0.05
+      - 0.1
+      - 0.2
+      - 0.5
+  objfile:
+    values:
+      #* STANFORD DATASET
+      - armadillo
+      - bunny
+      - dragon
+      - happy
+      #* TOSCA DATASET
+      # - cat2
+      # - cat6
+      # - centaur4
+      # - david10
+      # - dog7
+      # - dog10
+      # - gorilla14
+      # - horse0
+      # - horse7
+      # - michael2
+      # - michael11
+      # - michael14
+      # - michael17
+      # - victoria21
+      # - victoria23
+      # - wolf1
+
+  # use_silhouette_loss:
+  #   values:
+  #     - True
+  #     - False
+  #   distribution: categorical
+  # use_depth_loss:
+  #   values:
+  #     - True
+  #     - False
+  #   distribution: categorical
+  # use_cd_loss:
+  #   values:
+  #     - True
+  #     - False
+  #   distribution: categorical
+  # use_md_loss:
+  #   values:
+  #     - True
+  #     - False
+  #   distribution: categorical
+
