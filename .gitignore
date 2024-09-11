@@ -12,3 +12,5 @@ __pycache__/
 .vscode/
 
 output/
+data/TOSCA_ALL
+data/TOSCA_TEST

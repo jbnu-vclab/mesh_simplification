@@ -1,9 +1,21 @@
 import torch
+from torch import nn
 
 # Data structures and functions for rendering
 from pytorch3d.renderer import *
 from src.shader.edge_shader import GaussianEdgeShader, SimpleEdgeShader
 from src.shader.depth_shader import SoftDepthShader, HardDepthShader
+
+class MeshRendererWithDepth(nn.Module):
+    def __init__(self, rasterizer, shader):
+        super().__init__()
+        self.rasterizer = rasterizer
+        self.shader = shader
+
+    def forward(self, meshes_world, **kwargs) -> torch.Tensor:
+        fragments = self.rasterizer(meshes_world, **kwargs)
+        images = self.shader(fragments, meshes_world, **kwargs)
+        return images, fragments.zbuf
 
 def define_multi_view_cam(device, num_views, distance, znear, zfar, size=1.0, cam_type='FoVOrthographic'):
     elev = torch.linspace(0, 360, num_views)
@@ -23,6 +35,28 @@ def define_multi_view_cam(device, num_views, distance, znear, zfar, size=1.0, ca
 def define_light(device, pointlight_location):
     lights = PointLights(device=device, location=[pointlight_location])
     return lights
+
+def define_depth_renderer(device, image_size, shader_str, cameras, lights,
+                          blur_radius=0.0, faces_per_pixel=1, gaussian_edge_thr=0.01):
+    shader = SoftPhongShader(device=device, cameras=cameras, lights=lights)
+    raster_settings = RasterizationSettings(
+        image_size=image_size,
+        blur_radius=blur_radius,
+        bin_size=0,
+        faces_per_pixel=faces_per_pixel
+    )
+    
+    rasterizer = MeshRasterizer(
+        cameras=cameras, 
+        raster_settings=raster_settings
+    )
+
+    renderer = MeshRendererWithDepth(
+        rasterizer=rasterizer,
+        shader=shader
+    )
+
+    return renderer
 
 def define_renderer(device, image_size, shader_str, cameras, lights, 
                     blur_radius=0.0, faces_per_pixel=1, gaussian_edge_thr=0.01):
@@ -52,11 +86,13 @@ def define_renderer(device, image_size, shader_str, cameras, lights,
         faces_per_pixel=faces_per_pixel# if shader_str.lower() == "softphong" else 1,
     )
 
+    rasterizer = MeshRasterizer(
+        cameras=cameras,
+        raster_settings=raster_settings
+    )
+
     renderer = MeshRenderer(
-        rasterizer=MeshRasterizer(
-            cameras=cameras,
-            raster_settings=raster_settings
-        ),
+        rasterizer=rasterizer,
         shader=shader
     )
 

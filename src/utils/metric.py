@@ -77,25 +77,28 @@ def calc_average_metrics(source_folder_path: str, target_folder_path: str, norm=
 
 
 #* 단일 모델 성능 계산 및 점군 생성
-if __name__=='__main__':
+# if __name__=='__main__':
      
-    PATH = './data/'
-    file_name = 'cuboid'
-    A = load_mesh(device, PATH + file_name + '.obj', normalize=False)
-    B = load_mesh(device, PATH + file_name + '_simplified.obj', normalize=False)
+#     PATH = './data/'
+#     file_name = 'cuboid'
+#     A = load_mesh(device, PATH + file_name + '.obj', normalize=False)
+#     B = load_mesh(device, PATH + file_name + '_simplified.obj', normalize=False)
 
-    cd, src2gt, gt2src = calc_metric(A, B)
+#     cd, src2gt, gt2src = calc_metric(A, B)
 
-    # IO().save_pointcloud(spcl, "./source_pointcloud.ply")
-    # IO().save_pointcloud(tpcl, "./target_pointcloud.ply")
+#     # IO().save_pointcloud(spcl, "./source_pointcloud.ply")
+#     # IO().save_pointcloud(tpcl, "./target_pointcloud.ply")
 
-    print(f'{cd}, {src2gt}, {gt2src}')
+#     print(f'{cd}, {src2gt}, {gt2src}')
 
 #* 전체 성능 계산
-# if __name__=='__main__':
-#     if torch.cuda.is_available():
-#         device = torch.device("cuda:0")
-#         torch.cuda.set_device(device)
-#     else:
-#         device = torch.device("cpu")
-#     calc_average_metrics('E:/TOSCA_TEST/0.2','E:/TOSCA_TEST/original', norm=2)
+if __name__=='__main__':
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        torch.cuda.set_device(device)
+    else:
+        device = torch.device("cpu")
+    SRC_FOLDER='C:/Users/DongwonJeong/Documents/GitHub/mesh_simplification/data/TOSCA_ALL/simplified/'
+    ORG_FOLDER='C:/Users/DongwonJeong/Documents/GitHub/mesh_simplification/data/TOSCA_ALL/original'
+    ratio = 0.5
+    calc_average_metrics(SRC_FOLDER+f'{ratio}',ORG_FOLDER, norm=2)

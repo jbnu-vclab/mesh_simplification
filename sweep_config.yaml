@@ -3,17 +3,23 @@ method: grid
 parameters:
   simplify_level:
     values:
+      # - 0.01
       - 0.05
       - 0.1
       - 0.2
       - 0.5
-  objfile:
-    values:
+  # objfile:
+  #   values:
+      #* Thingi10K
+      # - angel
+      # - deer
+      # - dragon
+      # - woman
       #* STANFORD DATASET
-      - armadillo
-      - bunny
-      - dragon
-      - happy
+      # - armadillo
+      # - bunny
+      # - dragon
+      # - happy
       #* TOSCA DATASET
       # - cat2
       # - cat6
@@ -31,22 +37,92 @@ parameters:
       # - victoria21
       # - victoria23
       # - wolf1
+      #* ALL TOSCA (EXCEPT TEST SET)
+      # - cat0
+      # - cat1
+      # - cat3
+      # - cat4
+      # - cat5
+      # - cat7
+      # - cat8
+      # - cat9
+      # - cat10
+      # - centaur0
+      # - centaur1
+      # - centaur2
+      # - centaur3
+      # - centaur5
+      # - david0
+      # - david1
+      # - david6
+      # - david11
+      # - david12
+      # - david13
+      # - dog0
+      # - dog1
+      # - dog2
+      # - dog3
+      # - dog5
+      # - dog6
+      # - dog8
+      # - dog10
+      # - gorilla1
+      # - gorilla5
+      # - gorilla8
+      # - horse5
+      # - horse6
+      # - horse10
+      # - horse14
+      # - horse15
+      # - horse17
+      # - michael0
+      # - michael1
+      # - michael3
+      # - michael4
+      # - michael5
+      # - michael6
+      # - michael7
+      # - michael8
+      # - michael9
+      # - michael10
+      # - michael12
+      # - michael13
+      # - michael15
+      # - michael16
+      # - michael18
+      # - michael19
+      # - victoria0
+      # - victoria1
+      # - victoria2
+      # - victoria4
+      # - victoria7
+      # - victoria10
+      # - victoria12
+      # - victoria17
+      # - victoria24
+      # - victoria25
+      # - wolf0
+      # - wolf2
+
 
   # use_silhouette_loss:
   #   values:
   #     - True
   #     - False
   #   distribution: categorical
-  # use_depth_loss:
-  #   values:
-  #     - True
-  #     - False
-  #   distribution: categorical
-  # use_cd_loss:
-  #   values:
-  #     - True
-  #     - False
-  #   distribution: categorical
+
+  use_depth_loss:
+    values:
+      - True
+      - False
+    distribution: categorical
+
+  use_cd_loss:
+    values:
+      - True
+      - False
+    distribution: categorical
+
   # use_md_loss:
   #   values:
   #     - True

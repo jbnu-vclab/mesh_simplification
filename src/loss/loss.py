@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 def loss_with_random_permutation(num_views,
                                  num_views_per_iteration,
@@ -13,6 +14,14 @@ def loss_with_random_permutation(num_views,
         loss_func = mse_loss
     elif loss_type == 'iou':
         loss_func = iou_loss
+    elif loss_type == 'l1':
+        loss_func = l1_loss
+    elif loss_type == 'l2':
+        loss_func = l2_loss
+    elif loss_type == 'psnr':
+        loss_func = psnr_loss
+    else:
+        raise ValueError('Invalid loss type. Choose from [mse, iou, l1]')
 
     final_loss = 0
     for j in np.random.permutation(num_views).tolist()[:num_views_per_iteration]:
@@ -27,6 +36,16 @@ def loss_with_random_permutation(num_views,
 
 def mse_loss(predicted, target):
     return ((predicted - target) ** 2).mean()
+
+def l1_loss(predicted, target):
+    return torch.abs(predicted - target).mean()
+
+def l2_loss(predicted, target):
+    return torch.sqrt(((predicted - target) ** 2).mean())
+
+def psnr_loss(predicted, target):
+    mse = ((predicted - target) ** 2).mean()
+    return 20 * torch.log10(1.0 / torch.sqrt(mse))
 
 #  https://github.com/ShichenLiu/SoftRas
 def iou(predict, target, eps=1e-6):

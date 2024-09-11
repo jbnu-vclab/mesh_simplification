@@ -41,16 +41,23 @@ def barycentric_sampling_from_meshes(
     #! We assume there is only one mesh in meshes
     assert(num_meshes == 1)
 
+    normals = meshes.faces_normals_packed()
+
     # Get the vertex coordinates of the sampled faces.
     face_verts = verts[faces]
     v0, v1, v2 = face_verts[:, 0], face_verts[:, 1], face_verts[:, 2]
-
+    
     barycentric_coords = compute_barycentric_coordinates(v0, v1, v2)
 
     samples = barycentric_coords.unsqueeze(0)
+    normals = barycentric_coords.unsqueeze(0)
 
-    return samples
+    return samples, normals
 
 def compute_barycentric_coordinates(v0: torch.Tensor, v1:torch.Tensor, v2:torch.Tensor) -> torch.Tensor:
     barycentric_coords = (v0 + v1 + v2) / 3.0
+    return barycentric_coords
+
+def compute_barycentric_normals(n0: torch.Tensor, n1:torch.Tensor, n2:torch.Tensor) -> torch.Tensor:
+    barycentric_coords = (n0 + n1 + n2) / 3.0
     return barycentric_coords
