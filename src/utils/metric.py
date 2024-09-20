@@ -16,25 +16,44 @@ import pandas as pd
 def calc_metric(source_mesh: Meshes, target_mesh: Meshes, num_samples, norm=2, k=5):
     assert(k >= 1)
 
-    metrics = np.zeros((k, 3), dtype=np.float32)
-    for i in range(k):
-        cd, spcl, tpcl = mesh_chamfer_distance(source_mesh, target_mesh, num_samples, norm=norm)
+    cd, spcl, tpcl = mesh_chamfer_distance(source_mesh, target_mesh, num_samples, norm=norm)
+    hd, spcl, tpcl = mesh_chamfer_distance(source_mesh, target_mesh, num_samples, norm=norm, is_hausdorff=True)
 
-        # IO().save_pointcloud(spcl, "./source_pointcloud.ply")
-        # IO().save_pointcloud(tpcl, "./target_pointcloud.ply")
-
-        src2gt = point_to_mesh_distance(target_mesh, source_mesh, num_samples)
-        gt2src = point_to_mesh_distance(source_mesh, target_mesh, num_samples)
-
-        cd = cd.item()
-        src2gt = src2gt.item()
-        gt2src = gt2src.item()
-
-        metrics[i] = cd, src2gt, gt2src
+    src2gt = point_to_mesh_distance(target_mesh, source_mesh, num_samples)
+    gt2src = point_to_mesh_distance(source_mesh, target_mesh, num_samples)
     
-    cd, src2gt, gt2src = metrics.mean(axis=0)
+    cd = cd.item()
+    hd = hd.item()
+    src2gt = src2gt.item()
+    gt2src = gt2src.item()
 
-    return cd, src2gt, gt2src
+    return cd, hd, src2gt, gt2src
+
+# def calc_metric(source_mesh: Meshes, target_mesh: Meshes, num_samples, norm=2, k=5):
+#     assert(k >= 1)
+
+#     metrics = np.zeros((k, 3), dtype=np.float32)
+#     for i in range(k):
+#         cd, spcl, tpcl = mesh_chamfer_distance(source_mesh, target_mesh, num_samples, norm=norm)
+#         hd, spcl, tpcl = mesh_chamfer_distance(source_mesh, target_mesh, num_samples, norm=norm, is_hausdorff=True)
+
+#         # IO().save_pointcloud(spcl, "./source_pointcloud.ply")
+#         # IO().save_pointcloud(tpcl, "./target_pointcloud.ply")
+
+#         src2gt = point_to_mesh_distance(target_mesh, source_mesh, num_samples)
+#         gt2src = point_to_mesh_distance(source_mesh, target_mesh, num_samples)
+        
+
+#         cd = cd.item()
+#         hd = hd.item()
+#         src2gt = src2gt.item()
+#         gt2src = gt2src.item()
+
+#         metrics[i] = cd, hd, src2gt, gt2src
+    
+#     cd, hd, src2gt, gt2src = metrics.mean(axis=0)
+
+#     return cd, src2gt, gt2src
 
 def calc_average_metrics(source_folder_path: str, target_folder_path: str, norm=2):
     target_models = glob(f'{target_folder_path}/*.obj')

@@ -179,7 +179,7 @@ def train_test(args):
     verts_shape = src_mesh.verts_packed().shape
     deform_verts = torch.full(verts_shape, 0.0, device=device, requires_grad=True)
 
-    cd, src2gt, gt2src = calc_metric(src_mesh, target_mesh, args['metric_num_samples'])
+    cd, hd, src2gt, gt2src = calc_metric(src_mesh, target_mesh, args['metric_num_samples'])
     print('|| Source Mesh <-> Ground Truth Mesh ||')
     print(f'CD: {round(cd, 8):.8f}\nsource pcl -> GT mesh: {round(src2gt, 8):.8f}\nGT pcl -> source mesh: {round(gt2src, 8):.8f}')
 
@@ -233,12 +233,6 @@ def train_test(args):
                                                                     args['cd_num_samples'], 
                                                                     sampling_method=args['cd_sampling_method'])
 
-        if args['use_hausdorff_loss']:
-            loss["hausdorff_distance"], _, _ = mesh_hausdorff_distance(new_src_mesh,
-                                                                    target_mesh,
-                                                                    args['cd_num_samples'],
-                                                                    sampling_method=args['cd_sampling_method'])
-
         if args['use_md_loss']:
             fpmd = point_to_mesh_distance(new_src_mesh, 
                                                 target_mesh, 
@@ -264,25 +258,6 @@ def train_test(args):
             'total_loss': sum_loss,
         })
 
-        # #* Gif plot
-        # if i % args['gif_step'] == 0:
-        #     rendered_gif_img = render_imgs(logger_renderer, new_src_mesh, logger_cameras, logger_lights, args['gif_num_views'])
-        #     # print(gif_imgs.shape)
-        #     np_gif_img = (rendered_gif_img.squeeze(0)*255).detach().cpu().numpy().astype(np.uint8)
-        #     pil_gif_img = PIL.Image.fromarray(np_gif_img)
-        #     pil_gif_img.save(f'./gif_tmp/{i}.png')
-          
-            # wandb.log({"examples": wandb.Image(gif_img)})
-            # print(gif_img.shape)
-            # gif_imgs_grid = convert_PIL_grid_img(gif_imgs, target_channel=None, nrow=5)
-            # gif_tmp_verts, gif_tmp_faces = new_src_mesh.get_mesh_verts_faces(0)
-            # gif_tmp_obj = os.path.join(wandb.run.dir, 'gif_tmp_model.obj')
-            # Wandb 폴더에 저장
-            # save_obj(gif_tmp_obj, gif_tmp_verts, gif_tmp_faces)
-            # wandb.log({
-            #     # "Gif": wandb.Object3D(open(gif_tmp_obj)),
-            #     "Gif Img": wandb.Image(pil_gif_img),
-            # })
         # Print the losses
         loop.set_description("total_loss = %.6f" % sum_loss)
 
@@ -298,15 +273,6 @@ def train_test(args):
             predicted_mesh = convert_textureless_mesh_into_textue_mesh(device, predicted_mesh)
             predicted_mesh = predicted_mesh.extend(args["num_views"])
 
-            # target_imgs['softphong'] = render_imgs(renderers['softphong'], predicted_mesh, cameras, lights, num_views)
-            # softphong_imgs_grid = convert_PIL_grid_img(target_imgs['softphong'], target_channel=None, nrow=5)
-
-            # target_imgs['silhouette'] = render_imgs(renderers['silhouette'], predicted_mesh, cameras, lights, num_views)
-            # silhouette_imgs_grid = convert_PIL_grid_img(target_imgs['silhouette'], target_channel=3, nrow=5)
-
-            # target_imgs['model_edge'] = render_imgs(renderers['model_edge'], predicted_mesh, cameras, lights, num_views)
-            # edge_imgs_grid = convert_PIL_grid_img(target_imgs['model_edge'], target_channel=0, nrow=5)
-
             target_imgs['depth'] = render_imgs(renderers['depth'], predicted_mesh, cameras, lights=None, num_views=num_views)
             depth_imgs_grid = convert_PIL_grid_img(target_imgs['depth'], target_channel=0, nrow=5)
 
@@ -317,12 +283,12 @@ def train_test(args):
                 "Test Depth Img": depth_imgs_grid
             })
 
-    result_table = wandb.Table(columns=["CD", "Dist result pc -> target mesh", "Dist target pc -> result mesh"])
+    result_table = wandb.Table(columns=["CD", "Hausdorff", "FPMD", "BPMD"])
 
-    cd, src2gt, gt2src = calc_metric(new_src_mesh, target_mesh, args['metric_num_samples'])
-    result_table.add_data(cd, src2gt, gt2src)
+    cd, hd, src2gt, gt2src = calc_metric(new_src_mesh, target_mesh, args['metric_num_samples'])
+    result_table.add_data(cd, hd, src2gt, gt2src)
     print('|| Result Mesh <-> Ground Truth Mesh ||')
-    print(f'CD: {round(cd, 8):.8f}\nresult pcl -> GT mesh: {round(src2gt, 8):.8f}\nGT pcl -> result mesh: {round(gt2src, 8):.8f}')
+    print(f'CD: {round(cd, 8):.8f}\nHD: {round(hd, 8):.8f}\nFPMD: {round(src2gt, 8):.8f}\nBPMD: {round(gt2src, 8):.8f}')
 
     final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)
     final_obj = os.path.join(wandb.run.dir, 'final_model.obj')

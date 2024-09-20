@@ -11,11 +11,6 @@ def apply_normalization_and_save(device, file_path: str, out_path: str):
     final_verts, final_faces = mesh.get_mesh_verts_faces(0)
     save_obj(out_path, final_verts, final_faces)
 
-    # ms = pymeshlab.MeshSet()
-    # ms.load_new_mesh(file_path)
-    # ms.compute_matrix_from_scaling_or_normalization(targetperc=target_percentage)
-    # ms.save_current_mesh(out_path)
-
 def apply_qem_and_save(file_path: str, out_path: str, target_percentage: float):
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(file_path)

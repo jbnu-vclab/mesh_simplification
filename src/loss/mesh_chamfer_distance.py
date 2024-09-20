@@ -5,7 +5,7 @@ from pytorch3d.ops import sample_points_from_meshes
 from pytorch3d.structures import Meshes, Pointclouds
 from src.ops.sample_points_from_meshes import barycentric_sampling_from_meshes
 
-def mesh_chamfer_distance(source_mesh, target_mesh, num_samples=5000, sampling_method='random', norm=2):
+def mesh_chamfer_distance(source_mesh, target_mesh, num_samples=5000, sampling_method='random', norm=2, is_hausdorff=False):
     if sampling_method == 'random':
         source_points, source_normals = sample_points_from_meshes(source_mesh, num_samples, return_normals=True)
         target_points, target_normals = sample_points_from_meshes(target_mesh, num_samples, return_normals=True)
@@ -21,30 +21,14 @@ def mesh_chamfer_distance(source_mesh, target_mesh, num_samples=5000, sampling_m
     spcl = Pointclouds(source_points, source_normals)
     tpcl = Pointclouds(target_points, target_normals)
 
+    point_reduction = 'mean' if not is_hausdorff else 'max'
+
     loss, _ = chamfer_distance(x=source_points, 
                                y=target_points, 
                                x_normals=source_normals, 
                                y_normals=target_normals,
+                               point_reduction=point_reduction,
                                norm=norm)
-
-    return loss, spcl, tpcl
-
-def mesh_hausdorff_distance(source_mesh, target_mesh, num_samples=5000, sampling_method='random'):
-    if sampling_method == 'random':
-        source_points, source_normals = sample_points_from_meshes(source_mesh, num_samples, return_normals=True)
-        target_points, target_normals = sample_points_from_meshes(target_mesh, num_samples, return_normals=True)
-    elif sampling_method == 'barycentric':
-        source_points, source_normals = barycentric_sampling_from_meshes(source_mesh)
-        target_points, target_normals = barycentric_sampling_from_meshes(target_mesh)
-
-    spcl = Pointclouds(source_points, source_normals)
-    tpcl = Pointclouds(target_points, target_normals)
-
-    loss = chamfer_distance(x=source_points,
-                            y=target_points,
-                            x_normals=source_normals,
-                            y_normals=target_normals,
-                            point_reduction='max')
 
     return loss, spcl, tpcl
 

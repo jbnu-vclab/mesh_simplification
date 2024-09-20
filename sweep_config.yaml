@@ -104,13 +104,6 @@ parameters:
       # - wolf0
       # - wolf2
 
-
-  # use_silhouette_loss:
-  #   values:
-  #     - True
-  #     - False
-  #   distribution: categorical
-
   use_depth_loss:
     values:
       - True

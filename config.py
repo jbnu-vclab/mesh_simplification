@@ -1,17 +1,17 @@
 args = {
     #* Logger
     'wandb_entity': 'tuna1210',
-    'wandb_project': 'mesh_simplification',
+    'wandb_project': 'aic_mesh',
     'wandb_reinit': True,
     'wandb_mode': 'online',                    # 'online' for logging, 'disabled' for debug
 
     #* Data
-    'dataset' : 'Thingi10K',                   # 'TOSCA_ALL' or 'TOSCA_TEST' or 'STANFORD' or 'Thingi10K'
-    'objfile' : 'deer',
+    'dataset' : 'TOSCA_ALL',                   # 'TOSCA_ALL' or 'TOSCA_TEST' or 'STANFORD' or 'Thingi10K'
+    'objfile' : 'centaur4',
     'result_path' : 'E:/Results_dancer_8k/',
     'init_sphere_level' : 4,
     'init_src_mesh_type' : 'simplified',       # 'ico_sphere' or 'simplified' or 'convexhull'
-    'simplify_level' : 0.0025,
+    'simplify_level' : 0.05,
     'init_src_mesh_scale' : 1.0,               # scale factor of init source mesh
     'convexhull_subdiv_level' : 1,             # N of subdivision of convexhull result
     'fixed_sharp_verts' : False,               # Detach vertices on sharp line
